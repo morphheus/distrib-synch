@@ -16,18 +16,19 @@ def zadoff(u, N,oversampling=1,  q=0):
     return np.exp(-1j*pi*u*x*(x+1+q)/N)
 
 
+def cplx_gaussian(shape, noise_variance):
+    """Assume jointly gaussian noise. Real and Imaginary parts have
+    noise_variance/2 actual variance"""
+    """The magnitude of the noise will have a variance of 'noise_variance'"""
+    x = np.random.normal(size=shape, scale=noise_variance) + 1j*np.random.normal(size=shape, scale=noise_variance)
+    return x*np.sqrt(1/2)
+
+
+
 """
 TODO:
-0. MAKE GIT
-
-1. Implement channel management
--Channel creation with AWGN in it already. complex AWGN (real and
-imaginary part are jointly gaussian)
--One "reception" channel per device.
+1. Implement channel management. 
 
 2. Implement clock class, with some sort of scheduler for events.
 
-
 """
-
-# HAI
