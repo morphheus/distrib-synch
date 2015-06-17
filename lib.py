@@ -2,6 +2,7 @@
 import numpy as np
 from numpy import pi
 import matplotlib.pyplot as plt
+#import scipy.signal.fftconvolve as fftconvlve
 
 
 
@@ -25,10 +26,55 @@ def cplx_gaussian(shape, noise_variance):
 
 
 
+def barycenter_correlation(f,g,power_weight=2, method='regular'):
+    """Outputs the barycenter location of 'f' in 'g'. g is expected to be the
+    longer array"""
+    if len(g) < len(f):
+        raise AttributeError("Expected 'g' to be longer than 'f'")
+    
+    if method == 'regular':
+        cross_correlation = np.convolve(f,g,mode='full')
+    elif method == 'fft':
+        cross_correlation = fftconvolve(f,g,mode='full')
+    else: raise ValueError("Unkwnown '" + method +"' method")
+
+    cross_correlation = abs(cross_correlation)**power_weight
+    
+    lag = np.indices(cross_correlation.shape)[0]+1
+    bary = np.sum(cross_correlation*lag)/np.sum(cross_correlation)
+
+    return bary
+
+
+
+f = np.array([0.5,1,0.5])
+g = np.array([ 0,0,0,0,0,0,0,0.5,1,0.5,0, 0,0])
+
+
+tmp = barycenter_correlation(f,g)
+print(np.convolve(f,g))
+print(tmp)
+
 """
 TODO:
-1. Implement channel management. 
+0. Complex conjugate on f! in Barycenter! (cross correlation requires complex conjugation)
 
-2. Implement clock class, with some sort of scheduler for events.
+1. Properly test barycenter_correlation
+
+2. Implement clock class and scheduler
+
+"""
+
+
+
+"""
+OPTIMIZATION LIST:
+
+
+BARYCENTER_CORRELATION()
+1. Use scipy.signal.fftconvolve instead of numpy.convolve
+
+2. Use mode='valid' instead of full (to save on some computation). This will require adjusting the value of the output, as the cross-correlation matrix will not have the same size as g
+
 
 """
