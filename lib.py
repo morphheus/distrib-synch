@@ -1,9 +1,17 @@
 #!/usr/bin/env python
 import numpy as np
-from numpy import pi
 import matplotlib.pyplot as plt
+import collections
+
+from numpy import pi
 #import scipy.signal.fftconvolve as fftconvlve
 
+
+
+
+#-------------------
+# SUBROUTINES
+#-------------------
 
 
 #---------
@@ -51,29 +59,89 @@ def barycenter_correlation(f,g,power_weight=2, method='regular'):
     return barycenter, cross_correlation
 
 
+#----------------------------
+# CLASSES
+#----------------------------
+
+
+class CustomDeque(collections.deque):
+    """Just adding arbitrary insert to the deque class"""
+    def insert(self, index, value):
+        self.rotate(-1*index)
+        self.append(value)
+        self.rotate(index+1)
+
+
+
+class Scheduler:
+    """Each entry in queue is a tuple, where the first tuple entry is the event time
+    and the second entry is the clock that has an event to execute"""
+    
+    #def __init__(self, max_frame):
+    #    self.max_frame = max_frame
+    
+    queue = CustomDeque()
+    
+    def ordered_insert(self, frame, clocknum):
+        """Insert from the left in descending order"""
+        
+        try:
+            k = self.queue[0][0]
+        except IndexError:
+            self.queue.appen((frame,clocknum))
+            return
+
+        idx = 0
+        while k < frame:
+            idx += 1
+            k = self.queue[idx][0]
+
+        
+        self.queue.insert(idx,(frame,clocknum))
+
+
+
+
+
+#----------------------------
+# MAIN
+#----------------------------
+
+schedule = Scheduler()
+print(schedule.queue)
+
+exit()
 
 N = 1000
-pulse = zadoff(1,31*3, oversampling=1,q=1)
+pulse = zadoff(1,31, oversampling=1,q=1)
 channel = cplx_gaussian([1,N],1)
 f = pulse
 g = channel[0]
 
-plt.plot(np.real(f))
-plt.show()
-exit()
 
 pulse_idx = round(len(g)*0.4)
 g[pulse_idx:pulse_idx+len(f)] += f
 
 tmp, crosscorr = barycenter_correlation(f,g,power_weight=2)
 print(tmp)
-#plt.plot(abs(crosscorr))
+plt.plot(abs(crosscorr))
+plt.plot(np.real(g))
+plt.show()
 
 
 """
 TODO:
 
+0 EMACS: implement shift-enter as return and remove one tab
+
+
 2. Implement clock class and scheduler
+
+3. Consider the interpolation that will be made by the physical device. Yes, it will generate
+discrete samples, but in practice, it will oscillate from one sample point to the other.
+Oversampling the generator does not function for varying reasons.
+
+What gives, then? Spline interpolation? Sinc interpolation? 
 
 10. Implement some sort of check for the "variance" of the barycenter. In the cross
 correlation, maybe drop all entries 10% from the min?
