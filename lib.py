@@ -29,6 +29,9 @@ def zadoff(u, N,oversampling=1,  q=0):
 
 
 
+
+
+
 #---------
 def cplx_gaussian(shape, noise_variance):
     """Assume jointly gaussian noise. Real and Imaginary parts have
@@ -40,6 +43,10 @@ def cplx_gaussian(shape, noise_variance):
     else:
         x = np.array([0+0j]*shape[0]*shape[1]).reshape(shape[0],-1)
     return x
+
+
+
+
 
 
 
@@ -73,6 +80,9 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy'):
 
 
 
+
+
+
 #------------------
 def d_to_a(values, pulse, spacing,dtype='complex128'):
     """outputs an array with modulated pulses"""
@@ -88,108 +98,6 @@ def d_to_a(values, pulse, spacing,dtype='complex128'):
 
 
 
-#------------------
-def commpyrcos(N, alpha, Ts, Fs):
-    """
-    IMPORTED FROM COMMPY
-    Generates a raised cosine (RC) filter (FIR) impulse response.
-
-    Parameters
-    ----------
-    N : int
-        Length of the filter in samples.
-
-    alpha : float
-        Roll off factor (Valid values are [0, 1]).
-
-    Ts : float
-        Symbol period in seconds.
-
-    Fs : float
-        Sampling Rate in Hz.
-
-    Returns
-    -------
-
-    h_rc : 1-D ndarray (float)
-        Impulse response of the raised cosine filter.
-
-    time_idx : 1-D ndarray (float)
-        Array containing the time indices, in seconds, for the impulse response.
-    """
-
-    T_delta = 1/float(Fs)
-    time_idx = ((np.arange(N)-N/2+0.5))*T_delta
-    sample_num = np.arange(N)
-    h_rc = np.zeros(N, dtype=float)
-
-    for x in sample_num:
-        t = (x-N/2)*T_delta
-        if t == 0.0:
-            h_rc[x] = 1.0
-        elif alpha != 0 and t == Ts/(2*alpha):
-            h_rc[x] = (np.pi/4)*(np.sin(np.pi*t/Ts)/(np.pi*t/Ts))
-        elif alpha != 0 and t == -Ts/(2*alpha):
-            h_rc[x] = (np.pi/4)*(np.sin(np.pi*t/Ts)/(np.pi*t/Ts))
-        else:
-            h_rc[x] = (np.sin(np.pi*t/Ts)/(np.pi*t/Ts))* \
-                    (np.cos(np.pi*alpha*t/Ts)/(1-(((2*alpha*t)/Ts)*((2*alpha*t)/Ts))))
-
-    return time_idx, h_rc
-
-
-
-#---------------------
-def commpyrootrcos(N, alpha, Ts, Fs):
-    """
-    Generates a root raised cosine (RRC) filter (FIR) impulse response.
-
-    Parameters
-    ----------
-    N : int
-        Length of the filter in samples.
-
-    alpha : float
-        Roll off factor (Valid values are [0, 1]).
-
-    Ts : float
-        Symbol period in seconds.
-
-    Fs : float
-        Sampling Rate in Hz.
-
-    Returns
-    ---------
-
-    h_rrc : 1-D ndarray of floats
-        Impulse response of the root raised cosine filter.
-
-    time_idx : 1-D ndarray of floats
-        Array containing the time indices, in seconds, for
-        the impulse response.
-    """
-
-    T_delta = 1/float(Fs)
-    time_idx = ((np.arange(N)-N/2+0.5))*T_delta
-    sample_num = np.arange(N)
-    h_rrc = np.zeros(N, dtype=float)
-
-    for x in sample_num:
-        t = (x-N/2)*T_delta
-        if t == 0.0:
-            h_rrc[x] = 1.0 - alpha + (4*alpha/np.pi)
-        elif alpha != 0 and t == Ts/(4*alpha):
-            h_rrc[x] = (alpha/np.sqrt(2))*(((1+2/np.pi)* \
-                    (np.sin(np.pi/(4*alpha)))) + ((1-2/np.pi)*(np.cos(np.pi/(4*alpha)))))
-        elif alpha != 0 and t == -Ts/(4*alpha):
-            h_rrc[x] = (alpha/np.sqrt(2))*(((1+2/np.pi)* \
-                    (np.sin(np.pi/(4*alpha)))) + ((1-2/np.pi)*(np.cos(np.pi/(4*alpha)))))
-        else:
-            h_rrc[x] = (np.sin(np.pi*t*(1-alpha)/Ts) +  \
-                    4*alpha*(t/Ts)*np.cos(np.pi*t*(1+alpha)/Ts))/ \
-                    (np.pi*t*(1-(4*alpha*t/Ts)*(4*alpha*t/Ts))/Ts)
-
-    return time_idx, h_rrc
 
 
 
@@ -234,125 +142,147 @@ def rcosfilter(N, a, T, f, dtype='complex128'):
 
 
 
-########################
-# THEORY AND STATIC GRAPHS
-########################
 
 
 
 
-#---------------------
-def test_crosscorr():
-    Nzc = 53
-    N = Nzc*10
 
-    f = zadoff(1,Nzc,q=0)
-    pulse = np.array(list(f)*7)
-    channel = cplx_gaussian([1,N],0)
-    g = channel[0]
-    
-    
-    pulse_idx = round(len(g)*0.1)
-    g[pulse_idx:pulse_idx+len(pulse)] += pulse
-    
-    barycenter, crosscorr = barycenter_correlation(f,g,power_weight=2)
-    print(barycenter)
-    plt.plot(abs(crosscorr))
-    #plt.plot(np.real(g))
-    plt.show()
+
 
 
 
 #--------------------
-def test_basecase(barylist,f_samp, f_symb, CFO):
+def analog_crosscorr(p):
+    """This function builds the sampled analog signal from the appropriate components. It then finds the two barycenters on said built signal"""
 
-    plen = 101 # Note: must be odd
-    rolloff = 0.1
-    #CFO = 0
-    TO = 0
-    trans_delay = 0
-    
-    T = 1/f_samp
-    G = 1/f_symb
-    spacing = 2*int(G/T)
-     
-    zadoff_length = 53
-    if not (G/T).is_integer():
-        raise ValueError('The ratio between the symbol period and sampling period must be an integer')
-
+    if not p.init_update:
+        raise AttributeError("Must execute p.update() before passing the Params class to this function")
 
     
+    T = 1/p.f_samp
 
-    time, pulse = rcosfilter(plen, rolloff, G, f_samp)
-
-    zpos = zadoff(1,zadoff_length)
-    zneg = zpos.conjugate()
-    
-    # Training sequence creation and "analogification"
-    repeat = 1
-    training_seq = np.concatenate(tuple([zneg]*repeat +[np.array([0])] + [zpos]*repeat))
-    analog_sig = d_to_a(training_seq, pulse, spacing)
-    analog_zpos = d_to_a(zpos, pulse, spacing)
+    analog_sig = d_to_a(p.training_seq, p.pulse, p.spacing)
+    analog_zpos = d_to_a(p.zpos, p.pulse, p.spacing)
 
     # pad zeros such as to implement TO
-    zerocount = round(len(analog_sig)/2)
-    analog_sig = np.concatenate((np.zeros(zerocount-TO-trans_delay), \
+    zerocount = round(len(analog_sig))
+    analog_sig = np.concatenate((np.zeros(zerocount- p.TO- p.trans_delay), \
                                  analog_sig, \
-                                 np.zeros(zerocount+TO+trans_delay)))
+                                 np.zeros(zerocount + p.TO + p.trans_delay)))
 
     # Apply CFO
-    for k in range(len(analog_sig)):
-        analog_sig[k] = analog_sig[k] *  np.exp(2*pi*1j*CFO*(k*T-TO-trans_delay))
-    
+    CFO_arr = np.exp( 2*pi*1j*p.CFO*(np.arange(len(analog_sig))*T - p.TO - p.trans_delay))
+    analog_sig = analog_sig*CFO_arr
 
     # Zero padding the positive sequence for cross-correlation
-    pad_zpos = np.insert(zpos,slice(1,None,1),0)
-    for k in range(2,spacing):
+    pad_zpos = np.insert(p.zpos,slice(1,None,1),0)
+    for k in range(2,p.spacing):
         pad_zpos = np.insert(pad_zpos,slice(1,None,k),0)
     pad_zneg = pad_zpos.conjugate()
 
 
     # Taking the cross-correlation and printing the adjusted barycenter
-    #barypos, crosscorrpos = barycenter_correlation(analog_zpos,analog_sig, power_weight=10) 
-    barypos, crosscorrpos = barycenter_correlation(pad_zpos,analog_sig, power_weight=10) 
-    baryneg, crosscorrneg = barycenter_correlation(pad_zneg,analog_sig, power_weight=10) 
+    barypos, crosscorrpos =barycenter_correlation(pad_zpos,analog_sig, power_weight=p.power_weight) 
+    baryneg, crosscorrneg =barycenter_correlation(pad_zneg,analog_sig, power_weight=p.power_weight) 
 
-    baryoffset = len(crosscorrneg)/2 + 0.5
-    barylist[0].append(barypos-baryoffset)
-    barylist[1].append(baryneg-baryoffset)
+    baryoffset = 0#len(crosscorrneg)/2 + 0.5
+
+
+    # Place all return arrays in one struct for simplicity
+    output = Struct()
+    output.add(barypos=barypos-baryoffset)
+    output.add(baryneg=baryneg-baryoffset)
+
+    if p.output_curves:
+        output.add(crosscorrpos=crosscorrpos)
+        output.add(crosscorrneg=crosscorrneg)
+        output.add(analog_sig=analog_sig)
+        output.add(analog_zpos=analog_zpos)
+        output.add(pad_zpos=pad_zpos)
+
+    return output
+    
+   
+
+
+
+
+##########################
+# CLASSDEFS
+#########################
+
+
+# ------------
+class Struct: 
+    """Basic structure"""
+    def add(self,**kwargs):
+        self.__dict__.update(kwargs)
+
+    def __iter__(self):
+        for name, val in self.__dict__.items():
+            yield name, val
+
+#--------------
+class Params(Struct):
+    """Parameter struct containing all the parameters used for the simulation"""
+    def __init__(self):
+        self.add(plen=101) # Note: must be odd
+        self.add(rolloff=0.1)
+        self.add(CFO=0)
+        self.add(TO=0)
+        self.add(trans_delay=0)
+        self.add(f_samp=1) # Sampling rate
+        self.add(f_symb=1) # Symbol frequency
+        self.add(zc_len=11) # Zadoff-chu length
+        self.add(repeat=1) # Number of ZC sequence repeats
+        self.add(spacing_factor=2) # Number of ZC sequence repeats
+        self.add(power_weight=10) # Number of ZC sequence repeats
+        self.add(output_curves=True)
+        self.add(pulse_type='raisedcosine')
+        self.add(init_update=False)
+
+
+
+
+
+    def build_training_sequence(self):
+        """Builds training sequence from current parameters"""
+        zpos = zadoff(1,self.zc_len)
+        zneg = zpos.conjugate()
+        training_seq = np.concatenate(tuple([zneg]*self.repeat+[np.array([0])]+[zpos]*self.repeat))
+
+        self.add(zpos=zpos)
+        self.add(training_seq=training_seq)
+
+
+
+
+
+    def build_pulse(self):
+        """Builds pulse from current parameters"""
+        if self.pulse_type == 'raisedcosine':
+            time, pulse = rcosfilter(self.plen, self.rolloff, 1/self.f_symb, self.f_samp)
+        else:
+            raise ValueError('The "' + pulse_type + '" pulse type is unknown')
+
+        self.add(pulse_times=time)
+        self.add(pulse=pulse)
+
 
     
-    #curve = np.abs(crosscorrpos)
-    #curve = np.abs(analog_sig)
-    #indep_ax = np.arange(len(curve)) - len(curve)/2 + 0.5
-    #plt.plot((indep_ax, indep_ax), (curve, np.zeros(len(curve))), 'k-')
-    #plt.scatter(indep_ax, curve, marker='.')
-    #iplt.plot(indep_ax,curve,'k-')
-    #x_lims = [min(indep_ax), max(indep_ax)]
-    #plt.plot(x_lims, [0,0], 'k-')
-    #plt.xlim(x_lims)
+    def update(self):
+        """Updates dependent variables with current variables"""
+        self.build_pulse()
+        self.build_training_sequence()
 
-    #plt.show()
-
-
-def barycenter_width_graph():
-
-    barylist = [[],[]]
-    
-
-    f_samp = 1000 # Sampling rate
-    f_symb = 100# Symbol frequency
-    CFO = np.arange(-1*f_symb,f_symb,0.01*f_symb)
-    for k in CFO:
-        test_basecase(barylist, f_samp, f_symb, k)
+        tmp = self.f_samp/self.f_symb
+        if not float(tmp).is_integer():
+            raise ValueError('The ratio between the symbol period and sampling period must be an integer')
+        self.add(spacing=self.spacing_factor*int(tmp))
+        
+        self.init_update = True
 
 
-    barywidth = np.array(barylist[0]) - np.array(barylist[1])
-
-    plt.plot(CFO,barywidth)
-    #plt.plot(CFO,barylist[0])
-    #plt.plot(CFO,barylist[1])
-    plt.show()
 
 """
 TODO:
@@ -391,5 +321,7 @@ of real & imaginary part
 
 NODES:
 make a Nodes class instead of multiple single nodes.
+
+test_crosscorr
 
 """
