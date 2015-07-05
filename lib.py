@@ -11,6 +11,8 @@ from pprint import pprint
 from scipy.signal import fftconvolve
 #from scipy.fftpack import 
 
+warnings.simplefilter('default')
+
 
 
 ########################
@@ -67,17 +69,16 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy'):
     
     weight = np.absolute(cross_correlation)**power_weight
     weightsum = np.sum(weight)
-    lag = np.indices(weight.shape)[0]+1
+    lag = np.indices(weight.shape)[0]
 
     # If empty cross_correlation, return -1
     if not weightsum:
-        barycenter = 0
+        barycenter = -1
     else:
         barycenter = np.sum(weight*lag)/weightsum
 
 
     return barycenter, cross_correlation
-
 
 
 
@@ -114,7 +115,7 @@ def rcosfilter(N, a, T, f, dtype='complex128'):
     t: time indexes associated with impulse response
     h: impulse response
 
-    NOTE: this thing is slow. Faster but complexier methods exist.
+    NOTE: this thing far from optimized
     """
     time = (np.arange(N,dtype=dtype)-N/2+0.5)/float(f)
     zero_entry = math.floor(N/2) # Index of entry with a zero
@@ -142,48 +143,58 @@ def rcosfilter(N, a, T, f, dtype='complex128'):
 
 
 
+#------------
+def find_barywidth_slope():
+    """Picks two points on the barywidth graph and calculates the slope"""
+    # TODO: use line fitting to obtain a better estimate of the slope instead of boring
+    # slope equation
+    params.full
+    
+    params = Params()
+    params.zc_len = 101
+    params.plen = 101
+    params.repeat = 1 # REPEAT MUST BE SET TO 1!!!
+    params.f_samp = 8
+    params.f_symb = 1
+    params.spacing_factor = 2 # Number of ZC sequence repeats
+    params.power_weight = 2 
+    params.update()
+
+    loc = 0.1
+
+    
+    params.CFO = -1*loc*params.f_symb
+    params.update()
+    lo = test_crosscorr(params)
+    
+    params.CFO = loc*params.f_symb
+    params.update()
+    hi = test_crosscorr(params)
 
 
+    lowidth = lo.barypos - lo.baryneg
+    hiwidth = hi.barypos - hi.baryneg
 
+    slope = (hiwidth - lowidth)/(loc*2)
 
+    print(slope)
+    return slope
 
 
 
 
 
 #--------------------
-def analog_crosscorr(p):
+def test_crosscorr(p):
     """This function builds the sampled analog signal from the appropriate components. It then finds the two barycenters on said built signal"""
 
     if not p.init_update:
         raise AttributeError("Must execute p.update() before passing the Params class to this function")
 
     
-    T = 1/p.f_samp
-
-    analog_sig = d_to_a(p.training_seq, p.pulse, p.spacing)
-    analog_zpos = d_to_a(p.zpos, p.pulse, p.spacing)
-
-    # pad zeros such as to implement TO
-    zerocount = round(len(analog_sig))
-    analog_sig = np.concatenate((np.zeros(zerocount- p.TO- p.trans_delay), \
-                                 analog_sig, \
-                                 np.zeros(zerocount + p.TO + p.trans_delay)))
-
-    # Apply CFO
-    CFO_arr = np.exp( 2*pi*1j*p.CFO*(np.arange(len(analog_sig))*T - p.TO - p.trans_delay))
-    analog_sig = analog_sig*CFO_arr
-
-    # Zero padding the positive sequence for cross-correlation
-    pad_zpos = np.insert(p.zpos,slice(1,None,1),0)
-    for k in range(2,p.spacing):
-        pad_zpos = np.insert(pad_zpos,slice(1,None,k),0)
-    pad_zneg = pad_zpos.conjugate()
-
-
     # Taking the cross-correlation and printing the adjusted barycenter
-    barypos, crosscorrpos =barycenter_correlation(pad_zpos,analog_sig, power_weight=p.power_weight) 
-    baryneg, crosscorrneg =barycenter_correlation(pad_zneg,analog_sig, power_weight=p.power_weight) 
+    barypos, crosscorrpos =barycenter_correlation(p.pad_zpos,p.analog_sig, power_weight=p.power_weight) 
+    baryneg, crosscorrneg =barycenter_correlation(p.pad_zneg,p.analog_sig, power_weight=p.power_weight) 
 
     baryoffset = 0#len(crosscorrneg)/2 + 0.5
 
@@ -193,12 +204,9 @@ def analog_crosscorr(p):
     output.add(barypos=barypos-baryoffset)
     output.add(baryneg=baryneg-baryoffset)
 
-    if p.output_curves:
+    if not p.full_sim:
         output.add(crosscorrpos=crosscorrpos)
         output.add(crosscorrneg=crosscorrneg)
-        output.add(analog_sig=analog_sig)
-        output.add(analog_zpos=analog_zpos)
-        output.add(pad_zpos=pad_zpos)
 
     return output
     
@@ -224,7 +232,8 @@ class Struct:
 
 #--------------
 class Params(Struct):
-    """Parameter struct containing all the parameters used for the simulation"""
+    """Parameter struct containing all the parameters used for the simulation, from the generation of the modulated training sequence to the exponent of the cross-correlation"""
+    #------------------------------------
     def __init__(self):
         self.add(plen=101) # Note: must be odd
         self.add(rolloff=0.1)
@@ -237,7 +246,7 @@ class Params(Struct):
         self.add(repeat=1) # Number of ZC sequence repeats
         self.add(spacing_factor=2) # Number of ZC sequence repeats
         self.add(power_weight=10) # Number of ZC sequence repeats
-        self.add(output_curves=True)
+        self.add(full_sim=True)
         self.add(pulse_type='raisedcosine')
         self.add(init_update=False)
 
@@ -245,6 +254,7 @@ class Params(Struct):
 
 
 
+    #------------------------------------
     def build_training_sequence(self):
         """Builds training sequence from current parameters"""
         zpos = zadoff(1,self.zc_len)
@@ -255,9 +265,53 @@ class Params(Struct):
         self.add(training_seq=training_seq)
 
 
+    #------------------------------------
+    def calc_base_barywidth(self):
+        """Calculates the barycenter width of the given parameters"""
+        """ASSUMPTION: spacing_factor = 2"""
+        if not self.init_update:
+            raise AttributeError("Must execute p.update() before passing the Params class to this function")
+        if self.CFO != 0:
+            warnings.warn("calc_base_barywidth() was called with non-zero CFO in argument parameters")
+
+        # Finding base barywidth
+        full_sim_tmp = self.full_sim
+        CFO_tmp = self.CFO
+        self.full_sim = False
+        self.update()
+        barypos, _ =barycenter_correlation(self.pad_zpos,self.analog_sig, power_weight=self.power_weight) 
+        baryneg, _ =barycenter_correlation(self.pad_zneg,self.analog_sig, power_weight=self.power_weight) 
+        self.add(basewidth=barypos-baryneg)
+
+
+    
+    #------------------------------------
+        # Finding barywidth slope
+        loc = 0.05
+        
+        self.CFO = -1*loc*self.f_symb
+        self.update()
+        barypos, _ =barycenter_correlation(self.pad_zpos,self.analog_sig, power_weight=self.power_weight) 
+        baryneg, _ =barycenter_correlation(self.pad_zneg,self.analog_sig, power_weight=self.power_weight) 
+        lowidth = barypos-baryneg
+        
+        self.CFO = loc*self.f_symb
+        self.update()
+        barypos, _= barycenter_correlation(self.pad_zpos,self.analog_sig, power_weight=self.power_weight) 
+        baryneg, _ =barycenter_correlation(self.pad_zneg,self.analog_sig, power_weight=self.power_weight) 
+        hiwidth = barypos-baryneg
+        
+        slope = (hiwidth - lowidth)/(loc*2)
+
+        # putting state back to proper values
+        self.CFO = CFO_tmp
+        self.full_sim = full_sim_tmp
+        self.update()
+        self.add(baryslope=slope)
 
 
 
+    #------------------------------------
     def build_pulse(self):
         """Builds pulse from current parameters"""
         if self.pulse_type == 'raisedcosine':
@@ -270,6 +324,41 @@ class Params(Struct):
 
 
     
+
+    #------------------------------------
+    def build_analog_sig(self):
+        """Must run build_pulse and build_training_sequence first"""
+        T = 1/self.f_samp
+        analog_sig = d_to_a(self.training_seq, self.pulse, self.spacing)
+        analog_zpos = d_to_a(self.zpos, self.pulse, self.spacing)
+
+        # pad zeros such as to implement TO
+        if not self.full_sim:
+            zerocount = round(len(analog_sig))
+            analog_sig = np.concatenate((np.zeros(zerocount- self.TO- self.trans_delay), \
+                                     analog_sig, \
+                                     np.zeros(zerocount + self.TO + self.trans_delay)))
+        
+        # Apply CFO only if not running a synchronization simulation
+            CFO_arr = np.exp( 2*pi*1j*self.CFO*(np.arange(len(analog_sig))*T - self.TO - self.trans_delay))
+            analog_sig = analog_sig*CFO_arr
+
+        
+        # Zero padding the positive sequence for cross-correlation
+        pad_zpos = np.insert(self.zpos,slice(1,None,1),0)
+        for k in range(2,self.spacing):
+            pad_zpos = np.insert(pad_zpos,slice(1,None,k),0)
+        
+        pad_zneg = pad_zpos.conjugate()
+
+        self.add(pad_zpos=pad_zpos)
+        self.add(pad_zneg=pad_zneg)
+        self.add(analog_sig=analog_sig)
+        self.add(analog_zpos=analog_zpos)
+
+
+
+    #------------------------------------
     def update(self):
         """Updates dependent variables with current variables"""
         self.build_pulse()
@@ -279,6 +368,8 @@ class Params(Struct):
         if not float(tmp).is_integer():
             raise ValueError('The ratio between the symbol period and sampling period must be an integer')
         self.add(spacing=self.spacing_factor*int(tmp))
+        
+        self.build_analog_sig()
         
         self.init_update = True
 

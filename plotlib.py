@@ -7,19 +7,21 @@ from lib import *
 def barycenter_width_graph():
 
     params = Params()
-    params.zc_len = 21
-    params.plen = 21
+    params.zc_len = 101
+    params.plen = 131
     params.repeat = 1 # REPEAT MUST BE SET TO 1!!!
-    params.f_samp = 10
+    params.f_samp = 5
     params.f_symb = 1
+    params.full_sim = False
     params.update()
     barylist = [[],[]]
     
 
-    CFO = np.arange(-1*params.f_symb, params.f_symb, 0.01*params.f_symb)
+    CFO = np.arange(-0.40*params.f_symb, 0.40*params.f_symb, 0.01*params.f_symb)
     for k in CFO:
         params.CFO=k
-        tmp = analog_crosscorr(params)
+        params.update()
+        tmp = test_crosscorr(params)
         barylist[0].append(tmp.barypos)
         barylist[1].append(tmp.baryneg)
 
