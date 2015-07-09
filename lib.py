@@ -53,10 +53,14 @@ def cplx_gaussian(shape, noise_variance):
 
 
 #---------
-def barycenter_correlation(f,g, power_weight=2, method='numpy'):
+def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0):
     """Outputs the barycenter location of 'f' in 'g'. g is expected to be the
-    longer array"""
-    """Note: barycenter will correspond to the entry IN THE CROSS CORRELATION"""
+    longer array
+    Note: barycenter will correspond to the entry IN THE CROSS CORRELATION
+
+    bias_thresh will only weight the peaks within bias_thresh of the maximum.
+    
+    """
     if len(g) < len(f):
         raise AttributeError("Expected 'g' to be longer than 'f'")
     
@@ -66,8 +70,21 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy'):
         cross_correlation = fftconvolve(g, f.conjugate(),mode='valid')
     else: raise ValueError("Unkwnown '" + method +"' method")
 
+
+    cross_correlation = np.absolute(cross_correlation)
+    if bias_thresh:
+        """We calculate the bias to remove from the absolute of the crosscorr
+        Note that entries smaller than 0.01 of the max are NOT included in the bias"""
+        #bias = cross_correlation.max()*bias_thresh
+        bias = np.sum(cross_correlation)/len(cross_correlation) * 2 
+        grid = np.meshgrid(cross_correlation,bias)
+        remove = (grid[0] < grid[1])[0]
+        cross_correlation -= bias*0.999 # The 0.99 is to take care of rounding errors
+        cross_correlation[remove] = 0
+
+
     
-    weight = np.absolute(cross_correlation)**power_weight
+    weight = cross_correlation**power_weight
     weightsum = np.sum(weight)
     lag = np.indices(weight.shape)[0]
 
@@ -143,43 +160,6 @@ def rcosfilter(N, a, T, f, dtype='complex128'):
 
 
 
-#------------
-def find_barywidth_slope():
-    """Picks two points on the barywidth graph and calculates the slope"""
-    # TODO: use line fitting to obtain a better estimate of the slope instead of boring
-    # slope equation
-    params.full
-    
-    params = Params()
-    params.zc_len = 101
-    params.plen = 101
-    params.repeat = 1 # REPEAT MUST BE SET TO 1!!!
-    params.f_samp = 8
-    params.f_symb = 1
-    params.spacing_factor = 2 # Number of ZC sequence repeats
-    params.power_weight = 2 
-    params.update()
-
-    loc = 0.1
-
-    
-    params.CFO = -1*loc*params.f_symb
-    params.update()
-    lo = test_crosscorr(params)
-    
-    params.CFO = loc*params.f_symb
-    params.update()
-    hi = test_crosscorr(params)
-
-
-    lowidth = lo.barypos - lo.baryneg
-    hiwidth = hi.barypos - hi.baryneg
-
-    slope = (hiwidth - lowidth)/(loc*2)
-
-    print(slope)
-    return slope
-
 
 
 
@@ -210,7 +190,22 @@ def test_crosscorr(p):
 
     return output
     
+
+
    
+# -------------------
+def calc_both_barycenters(p, *args):
+    """Wrapper that calculates the barycenter on the specified channel. If no channel specified,
+    it uses analog_sig instead"""
+    if p.full_sim:
+        g = args[0]
+    else:
+        g = p.analog_sig
+
+    barypos, crosscorrpos =barycenter_correlation(p.pad_zpos, g, power_weight=p.power_weight, bias_thresh=p.bias_removal) 
+    baryneg, crosscorrneg =barycenter_correlation(p.pad_zneg, g, power_weight=p.power_weight, bias_thresh=p.bias_removal) 
+
+    return barypos, baryneg, crosscorrpos, crosscorrneg
 
 
 
@@ -249,6 +244,7 @@ class Params(Struct):
         self.add(full_sim=True)
         self.add(pulse_type='raisedcosine')
         self.add(init_update=False)
+        self.add(bias_removal=0)
 
 
 
@@ -260,6 +256,7 @@ class Params(Struct):
         zpos = zadoff(1,self.zc_len)
         zneg = zpos.conjugate()
         training_seq = np.concatenate(tuple([zneg]*self.repeat+[np.array([0])]+[zpos]*self.repeat))
+        #training_seq = np.concatenate(tuple([zneg]*self.repeat+[zpos]*self.repeat))
 
         self.add(zpos=zpos)
         self.add(training_seq=training_seq)
@@ -279,26 +276,22 @@ class Params(Struct):
         CFO_tmp = self.CFO
         self.full_sim = False
         self.update()
-        barypos, _ =barycenter_correlation(self.pad_zpos,self.analog_sig, power_weight=self.power_weight) 
-        baryneg, _ =barycenter_correlation(self.pad_zneg,self.analog_sig, power_weight=self.power_weight) 
+        barypos, baryneg, _, _ = calc_both_barycenters(self)
         self.add(basewidth=barypos-baryneg)
 
 
     
-    #------------------------------------
         # Finding barywidth slope
         loc = 0.05
         
         self.CFO = -1*loc*self.f_symb
         self.update()
-        barypos, _ =barycenter_correlation(self.pad_zpos,self.analog_sig, power_weight=self.power_weight) 
-        baryneg, _ =barycenter_correlation(self.pad_zneg,self.analog_sig, power_weight=self.power_weight) 
+        barypos, baryneg, _, _ = calc_both_barycenters(self)
         lowidth = barypos-baryneg
         
         self.CFO = loc*self.f_symb
         self.update()
-        barypos, _= barycenter_correlation(self.pad_zpos,self.analog_sig, power_weight=self.power_weight) 
-        baryneg, _ =barycenter_correlation(self.pad_zneg,self.analog_sig, power_weight=self.power_weight) 
+        barypos, baryneg, _, _ = calc_both_barycenters(self)
         hiwidth = barypos-baryneg
         
         slope = (hiwidth - lowidth)/(loc*2)
@@ -334,13 +327,14 @@ class Params(Struct):
 
         # pad zeros such as to implement TO
         if not self.full_sim:
-            zerocount = round(len(analog_sig))
+            zerocount = round(len(analog_sig))*2
             analog_sig = np.concatenate((np.zeros(zerocount- self.TO- self.trans_delay), \
                                      analog_sig, \
                                      np.zeros(zerocount + self.TO + self.trans_delay)))
         
-        # Apply CFO only if not running a synchronization simulation
-            CFO_arr = np.exp( 2*pi*1j*self.CFO*(np.arange(len(analog_sig))*T - self.TO - self.trans_delay))
+            # Apply CFO only if not running a synchronization simulation
+            time_arr = (np.arange(len(analog_sig))+np.random.rand()*1000*len(analog_sig))*T
+            CFO_arr = np.exp( 2*pi*1j*self.CFO*(time_arr - self.trans_delay))
             analog_sig = analog_sig*CFO_arr
 
         

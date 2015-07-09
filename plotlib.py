@@ -7,28 +7,31 @@ from lib import *
 def barycenter_width_graph():
 
     params = Params()
-    params.zc_len = 101
-    params.plen = 131
+    params.zc_len = 51
+    params.plen = 19
     params.repeat = 1 # REPEAT MUST BE SET TO 1!!!
-    params.f_samp = 5
-    params.f_symb = 1
+    params.f_samp = 12
+    params.f_symb = 4
+    params.power_weight = 4
     params.full_sim = False
+    params.bias_removal = 0
     params.update()
     barylist = [[],[]]
     
 
-    CFO = np.arange(-0.40*params.f_symb, 0.40*params.f_symb, 0.01*params.f_symb)
+    CFO = np.arange(-0.5*params.f_symb, 0.5*params.f_symb, 0.001*params.f_symb)
     for k in CFO:
-        params.CFO=k
+        params.CFO = k
         params.update()
-        tmp = test_crosscorr(params)
-        barylist[0].append(tmp.barypos)
-        barylist[1].append(tmp.baryneg)
+        barypos, baryneg, _, _ = calc_both_barycenters(params)
+        barylist[0].append(barypos)
+        barylist[1].append(baryneg)
 
 
     barywidth = np.array(barylist[0]) - np.array(barylist[1])
 
-    plt.plot(CFO,barywidth)
+    plt.plot(CFO/params.f_symb,barywidth)
+    plt.plot((0,0), (min(barywidth),max(barywidth)))
     #plt.plot(CFO,barylist[0])
     #plt.plot(CFO,barylist[1])
     plt.show()
@@ -38,15 +41,27 @@ def barycenter_width_graph():
 #----------------
 def crosscorr_graph():
     params = Params()
-    params.zc_len = 11
-    params.f_samp = 10
-    params.f_symb = 1
+    params.zc_len = 201
+    params.plen = 1
+    params.rolloff = 0.2
+    params.f_samp = 12
+    params.f_symb = 3
     params.repeat = 1
-    params.build_training_sequence()
+    params.power_weight = 4
+    params.CFO = -0.0125
+    params.TO = 0
+    params.full_sim = False
+    params.bias_removal = 0
+
+
     
-    tmp = analog_crosscorr(params)
-    y = abs(tmp.crosscorrpos)
-    x = np.arange(len(y)) - len(y)/2 + 0.5
+    params.update()
+    
+    
+    barypos, baryneg, crosscorrpos, crosscorrneg = calc_both_barycenters(params)
+    print('Barypos: ' + str(barypos))
+    y = crosscorrneg
+    x = np.arange(len(y))# - len(y)/2 + 0.5
     plt.plot((x, x) , (y, np.zeros(len(y))), 'k-')
     #plt.scatter(x, y, marker='.')
     #plt.plot(indep_ax,curve,'k-')
@@ -64,10 +79,11 @@ def analog_graph():
     params.f_samp = 2
     params.f_symb = 1
     params.repeat = 1
-    params.build_training_sequence()
+    params.full_sim = False
+    params.update()
     
     tmp = test_crosscorr(params)
-    y = abs(tmp.analog_sig)
+    y = tmp.analog_sig
     x = np.arange(len(y)) - len(y)/2 + 0.5
     plt.plot((x, x) , (y, np.zeros(len(y))), 'k-')
     #plt.scatter(x, y, marker='.')
@@ -106,12 +122,21 @@ def modulated_zpos_graph():
 #----------------
 def pulse_graph():
     params = Params()
-    params.plen = 101
-    params.f_samp = 10
-    params.f_symb = 1
+    params.zc_len = 151
+    params.plen = 19
+    params.rolloff = 0.2
+    params.f_samp = 12
+    params.f_symb = 3
+    params.repeat = 1
+    params.power_weight = 4
+    params.CFO = 0
+    params.TO = 0
+    params.full_sim = False
+    params.bias_removal = 0
     
-    tmp = test_crosscorr(params)
-    y = np.real(tmp.pulse)
+    params.update()
+    
+    y = np.real(params.pulse)
     x = np.arange(len(y)) - len(y)/2 + 0.5
     plt.plot((x, x) , (y, np.zeros(len(y))), 'k-')
     #plt.scatter(x, y, marker='.')
