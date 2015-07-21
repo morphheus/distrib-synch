@@ -7,12 +7,12 @@ from lib import *
 def barycenter_width_graph():
 
     params = Params()
-    params.zc_len = 51
-    params.plen = 19
-    params.repeat = 1 # REPEAT MUST BE SET TO 1!!!
-    params.f_samp = 12
-    params.f_symb = 4
-    params.power_weight = 4
+    params.zc_len = 3
+    params.plen = 17
+    params.repeat = 10 # REPEAT MUST BE SET TO 1 (most of the time)
+    params.f_samp = 10
+    params.f_symb = 1
+    params.power_weight = 2
     params.full_sim = False
     params.bias_removal = 0
     params.update()

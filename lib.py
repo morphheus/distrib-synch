@@ -225,6 +225,10 @@ class Struct:
         for name, val in self.__dict__.items():
             yield name, val
 
+    def print_all_items(self):
+        for name,val in self:
+            print(name + '\n' + str(val)+ '\n')
+
 #--------------
 class Params(Struct):
     """Parameter struct containing all the parameters used for the simulation, from the generation of the modulated training sequence to the exponent of the cross-correlation"""
@@ -244,6 +248,7 @@ class Params(Struct):
         self.add(full_sim=True)
         self.add(pulse_type='raisedcosine')
         self.add(init_update=False)
+        self.add(init_basewidth=False)
         self.add(bias_removal=0)
 
 
@@ -301,6 +306,7 @@ class Params(Struct):
         self.full_sim = full_sim_tmp
         self.update()
         self.add(baryslope=slope)
+        self.init_basewidth = True
 
 
 
