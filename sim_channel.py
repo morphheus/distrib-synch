@@ -25,24 +25,40 @@ def ordered_insert(frame, clknum):
 
 
 
-class SimControlParams(Struct):
-    def __init__(self):
-        self.add(clkcount=7)
-        self.add(frameunit=1000) # Unit of time. A normalized period of 1 is frameunit frames.
-        self.add(chansize=self.frameunit*50)
-        self.add(topo_matrix=np.ones(self.clkcount**2).reshape(self.clkcount,-1))
-        self.add(noise_power=0)
+#class SimControlParams(Struct):
+#    def __init__(self):
+#        self.add(clkcount=7)
+#        self.add(frameunit=1000) # Unit of time. A normalized period of 1 is frameunit frames.
+#        self.add(chansize=self.frameunit*50)
+#        self.add(topo_matrix=np.ones(self.clkcount**2).reshape(self.clkcount,-1))
+#        self.add(noise_power=0)
+#
+#        self.add(phi_bounds=[1,1])
+#        self.add(self_interference=0) # When a clock emits, how much of it goes into it's own #channel?
+#        self.add(CFO_step_wait=60)
+#        self.add(rand_init=False)
+#        self.add(display=True)
+#        self.add(keep_intermediate_values=True)
 
-        self.add(phi_bounds=[1,1])
-        self.add(self_interference=0) # When a clock emits, how much of it goes into it's own channel?
-        self.add(CFO_step_wait=60)
-        self.add(rand_init=False)
-        self.add(display=True)
-        self.add(keep_intermediate_values=True)
 
+def default_ctrl_dict():
+    out = {}
+    out['clkcount'] = 7
+    out['frameunit'] = 1000
+    out['chansize'] = out['frameunit']*50
+    out['topo_matrix'] = np.ones(out['clkcount']**2).reshape(out['clkcount'],-1)
+    out['noise_power'] = 0
+    out['phi_bounds'] = [1,1]
+    out['self_interference'] = 0
+    out['CFO_step_wait'] = 60
+    out['rand_init'] = False
+    out['display'] = True
+    out['keep_intermediate_values'] = True
+    return out
 
+#controls = SimControlParams()
+controls = default_ctrl_dict()
 
-controls = SimControlParams()
 
 p = Params()
 p.zc_len = 10
@@ -69,14 +85,23 @@ def runsim(p,ctrl):
     """Executes a simulation"""
 
     # Load local variables. This is done to reduce the amount of crap in the main function
-    clkcount = ctrl.clkcount
-    frameunit = ctrl.frameunit
-    chansize = ctrl.chansize
-    topo_matrix = ctrl.topo_matrix
-    noise_power = ctrl.noise_power
-    phi_bounds = ctrl.phi_bounds
-    self_interference = ctrl.self_interference
-    CFO_step_wait = ctrl.CFO_step_wait
+    #clkcount = ctrl.clkcount
+    #frameunit = ctrl.frameunit
+    #chansize = ctrl.chansize
+    #topo_matrix = ctrl.topo_matrix
+    #noise_power = ctrl.noise_power
+    #phi_bounds = ctrl.phi_bounds
+    #self_interference = ctrl.self_interference
+    #CFO_step_wait = ctrl.CFO_step_wait
+
+    clkcount = ctrl['clkcount']
+    frameunit = ctrl['frameunit']
+    chansize = ctrl['chansize']
+    topo_matrix = ctrl['topo_matrix']
+    noise_power = ctrl['noise_power']
+    phi_bounds = ctrl['phi_bounds']
+    self_interference = ctrl['self_interference']
+    CFO_step_wait = ctrl['CFO_step_wait']
 
     analog_pulse = p.analog_sig
 
@@ -103,7 +128,7 @@ def runsim(p,ctrl):
     wait_til_emit = np.zeros(clkcount, dtype='int64')
     emit = np.array([True]*clkcount)
 
-    if ctrl.keep_intermediate_values:
+    if ctrl['keep_intermediate_values']:
         theta_inter = [[] for k in range(clkcount)]
         phi_inter = [[] for k in range(clkcount)]
         deltaf_inter = [[] for k in range(clkcount)]
@@ -115,7 +140,7 @@ def runsim(p,ctrl):
     deltaf_minmax = [-0.05,0.05]*p.f_symb
     do_CFO_correction = np.zeros(clkcount)
 
-    if ctrl.rand_init:
+    if ctrl['rand_init']:
         phi = np.random.randint(phi_minmax[0],phi_minmax[1]+1, size=clkcount)
         theta = np.random.randint(frameunit, size=clkcount)
         deltaf = np.random.uniform(deltaf_minmax[0],deltaf_minmax[1], size=clkcount)
@@ -149,11 +174,11 @@ def runsim(p,ctrl):
     # MAIN SIMULATION
     ####################
 
-    if ctrl.display:
+    if ctrl['display']:
         print('Theta std init: ' + str(np.std(theta)))
         print('deltaf std init: ' + str(np.std(deltaf)) + '    spread: '+ str(max(deltaf) -min(deltaf))+ '\n')
 
-    if ctrl.keep_intermediate_values:
+    if ctrl['keep_intermediate_values']:
         for k in range(clkcount):
             theta_inter[k].append((theta[k],theta[k]))
             phi_inter[k].append((phi[k],phi[k]))
@@ -236,7 +261,7 @@ def runsim(p,ctrl):
                 do_CFO_correction[curclk] += 1
                 #print(theta)
 
-            if ctrl.keep_intermediate_values:
+            if ctrl['keep_intermediate_values']:
                 theta_inter[curclk].append((curframe,theta[curclk]))
                 phi_inter[curclk].append((curframe,phi[curclk]))
                 deltaf_inter[curclk].append((curframe,deltaf[curclk]))
@@ -268,20 +293,20 @@ def runsim(p,ctrl):
 
 
 
-    if ctrl.display:
+    if ctrl['display']:
         print('theta STD: ' + str(np.std(theta)))
         print('deltaf STD: ' + str(np.std(deltaf)) + '    spread: ' + str(max(deltaf)-min(deltaf)))
 
 
     # Add all calculated values with the controls parameter structure
-    ctrl.add(theta=theta)
-    ctrl.add(deltaf=deltaf)
-    ctrl.add(phi=phi)
+    ctrl['theta'] = theta
+    ctrl['deltaf'] = deltaf
+    ctrl['phi'] = phi
 
-    if ctrl.keep_intermediate_values:
-        ctrl.add(theta_inter=theta_inter)
-        ctrl.add(deltaf_inter=deltaf_inter)
-        ctrl.add(phi_inter=phi_inter)
+    if ctrl['keep_intermediate_values']:
+        ctrl['theta_inter'] = theta_inter
+        ctrl['deltaf_inter'] = deltaf_inter
+        ctrl['phi_inter'] = phi_inter
     
     
 
