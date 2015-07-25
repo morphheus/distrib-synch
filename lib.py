@@ -5,6 +5,7 @@ import collections
 import bisect
 import math
 import warnings
+import time
 
 from numpy import pi
 from pprint import pprint
@@ -206,6 +207,23 @@ def calc_both_barycenters(p, *args):
     baryneg, crosscorrneg =barycenter_correlation(p.pad_zneg, g, power_weight=p.power_weight, bias_thresh=p.bias_removal) 
 
     return barypos, baryneg, crosscorrpos, crosscorrneg
+
+
+
+#------------------------
+def build_timestamp_id():
+    """Builds a timestamp, and appens a random 3 digit number after it"""
+    tempo = time.localtime()
+    vals = ['year', 'mon', 'mday', 'hour', 'min', 'sec']
+    vals = ['tm_' + x for x in vals]
+
+    tstr = [str(getattr(tempo,x)).zfill(2) for x in vals]
+
+    return int(''.join(tstr) + str(np.random.randint(999)).zfill(3))
+
+
+
+
 
 
 

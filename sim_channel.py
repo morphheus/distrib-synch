@@ -56,25 +56,6 @@ def default_ctrl_dict():
     out['keep_intermediate_values'] = True
     return out
 
-#controls = SimControlParams()
-controls = default_ctrl_dict()
-
-
-p = Params()
-p.zc_len = 10
-p.plen = 39
-p.rolloff = 0.2
-p.f_samp = 12
-p.f_symb = 3
-p.repeat = 1
-p.power_weight = 4
-p.CFO = 0
-p.TO = 0
-p.full_sim = True
-p.bias_removal = 0
-
-p.update()
-p.calc_base_barywidth()
 
 
 
@@ -82,8 +63,15 @@ p.calc_base_barywidth()
 
 ##############################
 def runsim(p,ctrl):
-    """Executes a simulation"""
+    """Executes a simulation with the signal parameters p and controls parameters ctrl"""
 
+    # INPUT EXCEPTIONS
+    if not p.init_update or not p.init_basewidth:
+        raise AttributeError("Need to run p.update() and p.calc_base_barywidth before calling runsim()")
+    if len(analog_pulse) > frameunit:
+        raise ValueError('Pulse is longer than a frame. Bad stuff will happen')
+
+    
     # Load local variables. This is done to reduce the amount of crap in the main function
     #clkcount = ctrl.clkcount
     #frameunit = ctrl.frameunit
@@ -105,11 +93,6 @@ def runsim(p,ctrl):
 
     analog_pulse = p.analog_sig
 
-    # INPUT EXCEPTIONS
-    if not p.init_update or not p.init_basewidth:
-        raise AttributeError("Need to run p.update() and p.calc_base_barywidth before calling runsim()")
-    if len(analog_pulse) > frameunit:
-        raise ValueError('Pulse is longer than a frame. Bad stuff will happen')
 
     
 
