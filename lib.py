@@ -54,7 +54,7 @@ def cplx_gaussian(shape, noise_variance):
 
 
 #---------
-def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0):
+def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, mode='valid'):
     """Outputs the barycenter location of 'f' in 'g'. g is expected to be the
     longer array
     Note: barycenter will correspond to the entry IN THE CROSS CORRELATION
@@ -66,17 +66,16 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0):
         raise AttributeError("Expected 'g' to be longer than 'f'")
     
     if method == 'numpy':
-        cross_correlation = np.convolve(f.conjugate(),g,mode='valid')
+        cross_correlation = np.correlate(g, f, mode=mode)
     elif method == 'scipy':
-        cross_correlation = fftconvolve(g, f.conjugate(),mode='valid')
+        cross_correlation = fftconvolve(g, f.conjugate(),mode=mode)
     else: raise ValueError("Unkwnown '" + method +"' method")
 
 
     cross_correlation = np.absolute(cross_correlation)
     if bias_thresh:
-        """We calculate the bias to remove from the absolute of the crosscorr
-        Note that entries smaller than 0.01 of the max are NOT included in the bias"""
-        #bias = cross_correlation.max()*bias_thresh
+        """We calculate the bias to remove from the absolute of the crosscorr"""
+        
         bias = np.sum(cross_correlation)/len(cross_correlation) * 2 
         grid = np.meshgrid(cross_correlation,bias)
         remove = (grid[0] < grid[1])[0]
@@ -96,6 +95,9 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0):
         barycenter = np.sum(weight*lag)/weightsum
 
 
+    if mode == 'valid':
+        barycenter += math.floor(len(f)/2) # Correct for valid mode
+    
     return barycenter, cross_correlation
 
 
@@ -165,6 +167,7 @@ def rcosfilter(N, a, T, f, dtype='complex128'):
 
 
 
+# PENDING DELETION
 #--------------------
 def test_crosscorr(p):
     """This function builds the sampled analog signal from the appropriate components. It then finds the two barycenters on said built signal"""
@@ -193,20 +196,28 @@ def test_crosscorr(p):
     
 
 
+
+
+
+
    
 # -------------------
-def calc_both_barycenters(p, *args):
+def calc_both_barycenters(p, *args,mode='valid'):
     """Wrapper that calculates the barycenter on the specified channel. If no channel specified,
     it uses analog_sig instead"""
-    if p.full_sim:
+    if p.full_sim and len(args) > 0:
         g = args[0]
     else:
         g = p.analog_sig
 
-    barypos, crosscorrpos =barycenter_correlation(p.pad_zpos, g, power_weight=p.power_weight, bias_thresh=p.bias_removal) 
-    baryneg, crosscorrneg =barycenter_correlation(p.pad_zneg, g, power_weight=p.power_weight, bias_thresh=p.bias_removal) 
+
+    barypos, crosscorrpos =barycenter_correlation(p.pad_zpos, g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode) 
+    baryneg, crosscorrneg =barycenter_correlation(p.pad_zneg, g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode) 
 
     return barypos, baryneg, crosscorrpos, crosscorrneg
+
+
+
 
 
 
@@ -223,6 +234,25 @@ def build_timestamp_id():
 
 
 
+
+#------------------------
+def barywidth_map(p, reach=0.5, scaling=0.01):
+    """Generates the barywidth map for a given range, given as a fraction of f_symb"""
+    
+    initial_full_sim = p.full_sim
+    p.full_sim= False
+
+    CFO = np.arange(-reach*p.f_symb, reach*p.f_symb, scaling*p.f_symb)
+    barywidths = np.empty(len(CFO))
+    for k, val in enumerate(CFO):
+        p.CFO = val
+        p.update()
+        barypos, baryneg, _, _ = calc_both_barycenters(p)
+        barywidths[k] = barypos - baryneg
+
+    p.full_sim = initial_full_sim
+
+    return CFO, barywidths
 
 
 
@@ -247,6 +277,8 @@ class Struct:
         for name,val in self:
             print(name + '\n' + str(val)+ '\n')
 
+
+
 #--------------
 class Params(Struct):
     """Parameter struct containing all the parameters used for the simulation, from the generation of the modulated training sequence to the exponent of the cross-correlation"""
@@ -261,8 +293,8 @@ class Params(Struct):
         self.add(f_symb=1) # Symbol frequency
         self.add(zc_len=11) # Zadoff-chu length
         self.add(repeat=1) # Number of ZC sequence repeats
-        self.add(spacing_factor=2) # Number of ZC sequence repeats
-        self.add(power_weight=10) # Number of ZC sequence repeats
+        self.add(spacing_factor=2) 
+        self.add(power_weight=10) 
         self.add(full_sim=True)
         self.add(pulse_type='raisedcosine')
         self.add(init_update=False)
@@ -390,6 +422,7 @@ class Params(Struct):
         self.build_analog_sig()
         
         self.init_update = True
+
 
 
 

@@ -3,73 +3,114 @@
 from lib import *
 
 
-#---------------
-def barycenter_width_graph():
+###################
+# BASE GRAPHS
+###################
 
-    params = Params()
-    params.zc_len = 3
-    params.plen = 17
-    params.repeat = 10 # REPEAT MUST BE SET TO 1 (most of the time)
-    params.f_samp = 10
-    params.f_symb = 1
-    params.power_weight = 2
-    params.full_sim = False
-    params.bias_removal = 0
-    params.update()
-    barylist = [[],[]]
-    
+#---------------------
+def discrete(*args):
+    """Plots a discrete graph with vertical bars"""
+    if len(args) < 1 and len(args) > 2:
+        raise Exception("Too many or too little inputs")
+    elif len(args) == 2:
+        y = args[1]
+        x = args[0]
+    else:
+        y = args[0]
+        x = np.arange(len(y))
 
-    CFO = np.arange(-0.5*params.f_symb, 0.5*params.f_symb, 0.001*params.f_symb)
-    for k in CFO:
-        params.CFO = k
-        params.update()
-        barypos, baryneg, _, _ = calc_both_barycenters(params)
-        barylist[0].append(barypos)
-        barylist[1].append(baryneg)
-
-
-    barywidth = np.array(barylist[0]) - np.array(barylist[1])
-
-    plt.plot(CFO/params.f_symb,barywidth)
-    plt.plot((0,0), (min(barywidth),max(barywidth)))
-    #plt.plot(CFO,barylist[0])
-    #plt.plot(CFO,barylist[1])
-    plt.show()
-
-
-
-#----------------
-def crosscorr_graph():
-    params = Params()
-    params.zc_len = 201
-    params.plen = 1
-    params.rolloff = 0.2
-    params.f_samp = 12
-    params.f_symb = 3
-    params.repeat = 1
-    params.power_weight = 4
-    params.CFO = -0.0125
-    params.TO = 0
-    params.full_sim = False
-    params.bias_removal = 0
-
-
-    
-    params.update()
-    
-    
-    barypos, baryneg, crosscorrpos, crosscorrneg = calc_both_barycenters(params)
-    print('Barypos: ' + str(barypos))
-    y = crosscorrneg
-    x = np.arange(len(y))# - len(y)/2 + 0.5
     plt.plot((x, x) , (y, np.zeros(len(y))), 'k-')
     #plt.scatter(x, y, marker='.')
     #plt.plot(indep_ax,curve,'k-')
     x_lims = [min(x), max(x)]
     plt.plot(x_lims, [0,0], 'k-')
     plt.xlim(x_lims)
+    return plt
 
+
+#---------------------
+def continuous(*args):
+    """Plots a continuous graph"""
+    if len(args) < 1 and len(args) > 2:
+        raise Exception("Too many or too little inputs")
+    elif len(args) == 2:
+        y = args[1]
+        x = args[0]
+    else:
+        y = args[0]
+        x = np.arange(len(y))
+
+    plt.plot(x, y, 'k-')
+    #plt.scatter(x, y, marker='.')
+    #plt.plot(indep_ax,curve,'k-')
+    x_lims = [min(x), max(x)]
+    plt.xlim(x_lims)
+    
+
+
+
+
+
+
+
+###################
+# SPECIFIC GRAPHS
+###################
+
+
+#-------------------------
+def hair(frames,param):
+    """Plots an evolution graph of the parameter of"""
+    # Frames: frame_inter output from the simulation
+    # Param:  <param>_inter output from the simulation
+    for flist, plist in zip(frames,param):
+        continuous(flist,plist)
+
+    xmin = max([x[0] for x in frames])
+    xmax = max([x[-1] for x in frames])
+    plt.xlim([xmin,xmax])
+
+
+
+#---------------
+def barywidth(*args, **kwargs):
+    """Accepts either a Params() object or two iterables representing the CFO and the barywidth"""
+
+
+    if len(args) == 1 and type(args[0]).__name__ == 'Params':
+        CFO, barywidths = barywidth_map(args[0], **kwargs)
+        CFO = CFO/args[0].f_symb
+    elif len(args) == 2:
+        CFO = args[0]
+        barywidths = args[1]
+    else:
+        print("Invalid input")
+
+
+    plt.plot(CFO,barywidths)
+    plt.plot((0,0), (min(barywidths),max(barywidths)))
     plt.show()
+
+
+
+#----------------
+def crosscorr(*args):
+    """Builds a crosscorrelation graph.
+    Accepted inputs:
+    (<class 'Params'>)      will plot the crosscorrelation with the analog signal 
+    (x,y)                   where x and y are same length numpy arrays
+    """
+    if len(args) == 1 and type(args[0]).__name__ == 'Params':
+        _, _, y, _ = calc_both_barycenters(args[0],mode='same')
+        x = np.arange(len(y))# - len(y)/2 + 0.5
+    elif len(args) == 2:
+        x = args[0]
+        y = args[1]
+    else:
+        raise Exception('Wrong number of arguments')
+
+    discrete(x,y)
+
 
 
 #----------------

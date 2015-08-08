@@ -15,6 +15,7 @@ from numpy import pi
 from pprint import pprint
 
 
+#-------------------------
 def ordered_insert(frame, clknum):
     """Insert from the left in descending order, in a list"""
     global queue_frame, queue_clk
@@ -25,35 +26,23 @@ def ordered_insert(frame, clknum):
 
 
 
-#class SimControlParams(Struct):
-#    def __init__(self):
-#        self.add(clkcount=7)
-#        self.add(frameunit=1000) # Unit of time. A normalized period of 1 is frameunit frames.
-#        self.add(chansize=self.frameunit*50)
-#        self.add(topo_matrix=np.ones(self.clkcount**2).reshape(self.clkcount,-1))
-#        self.add(noise_power=0)
-#
-#        self.add(phi_bounds=[1,1])
-#        self.add(self_interference=0) # When a clock emits, how much of it goes into it's own #channel?
-#        self.add(CFO_step_wait=60)
-#        self.add(rand_init=False)
-#        self.add(display=True)
-#        self.add(keep_intermediate_values=True)
 
 
+#-------------------------
 def default_ctrl_dict():
     out = {}
     out['clkcount'] = 7
     out['frameunit'] = 1000
     out['chansize'] = out['frameunit']*50
-    out['topo_matrix'] = np.ones(out['clkcount']**2).reshape(out['clkcount'],-1)
+    out['topo_matrix'] = None
     out['noise_power'] = 0
     out['phi_bounds'] = [1,1]
     out['self_interference'] = 0
     out['CFO_step_wait'] = 60
     out['rand_init'] = False
     out['display'] = True
-    out['keep_intermediate_values'] = True
+    out['keep_intermediate_values'] = False
+    out['saveall'] = False # This options also saves all fields in Params to the control dict
     return out
 
 
@@ -61,27 +50,9 @@ def default_ctrl_dict():
 
 
 
-##############################
+#-------------------------
 def runsim(p,ctrl):
     """Executes a simulation with the signal parameters p and controls parameters ctrl"""
-
-    # INPUT EXCEPTIONS
-    if not p.init_update or not p.init_basewidth:
-        raise AttributeError("Need to run p.update() and p.calc_base_barywidth before calling runsim()")
-    if len(analog_pulse) > frameunit:
-        raise ValueError('Pulse is longer than a frame. Bad stuff will happen')
-
-    
-    # Load local variables. This is done to reduce the amount of crap in the main function
-    #clkcount = ctrl.clkcount
-    #frameunit = ctrl.frameunit
-    #chansize = ctrl.chansize
-    #topo_matrix = ctrl.topo_matrix
-    #noise_power = ctrl.noise_power
-    #phi_bounds = ctrl.phi_bounds
-    #self_interference = ctrl.self_interference
-    #CFO_step_wait = ctrl.CFO_step_wait
-
     clkcount = ctrl['clkcount']
     frameunit = ctrl['frameunit']
     chansize = ctrl['chansize']
@@ -93,12 +64,21 @@ def runsim(p,ctrl):
 
     analog_pulse = p.analog_sig
 
+    # INPUT EXCEPTIONS
+    if not p.init_update or not p.init_basewidth:
+        raise AttributeError("Need to run p.update() and p.calc_base_barywidth before calling runsim()")
+    if len(analog_pulse) > frameunit:
+        raise ValueError('Pulse is longer than a frame. Bad stuff will happen')
 
-    
 
     #----------------------
     # VARIABLE DECLARATIONS
     #----------------------
+
+    if topo_matrix == None:
+        topo_matrix = np.ones(clkcount**2).reshape(clkcount,-1)
+        ctrl['topo_matrix'] = topo_matrix
+
 
     global queue_frame, queue_clk
     queue_frame = []
@@ -109,9 +89,11 @@ def runsim(p,ctrl):
     max_frame = chansize-offset;
     wait_til_adjust = np.zeros(clkcount, dtype='int64')
     wait_til_emit = np.zeros(clkcount, dtype='int64')
+    prev_adjustframe = np.zeros(clkcount, dtype='int64')
     emit = np.array([True]*clkcount)
 
     if ctrl['keep_intermediate_values']:
+        frame_inter = [[] for k in range(clkcount)]
         theta_inter = [[] for k in range(clkcount)]
         phi_inter = [[] for k in range(clkcount)]
         deltaf_inter = [[] for k in range(clkcount)]
@@ -131,9 +113,11 @@ def runsim(p,ctrl):
 
     else:
         phi = np.random.randint(phi_minmax[0],phi_minmax[1]+1, size=clkcount)
-        theta = np.round(np.arange(clkcount)/(clkcount+1) * frameunit)
+        #theta = np.round((np.arange(clkcount)/(2*(clkcount-1))+0.25) * frameunit)
+        theta = np.zeros(clkcount) + round(frameunit/2)
         theta = theta.astype(int)
         deltaf = (np.arange(clkcount)**2 - clkcount/2)/clkcount**2 * deltaf_minmax[1]
+        #deltaf = np.zeros(clkcount)
         clk_creation = np.zeros(clkcount)
 
     
@@ -147,7 +131,7 @@ def runsim(p,ctrl):
         ordered_insert(frame+phi_minmax[1],clknum) # the + offset is to prevent accessing negative frames
 
     # Release unused variables:
-    del frame, clknum, phi_minmax
+    del frame, clknum
 
 
 
@@ -163,28 +147,38 @@ def runsim(p,ctrl):
 
     if ctrl['keep_intermediate_values']:
         for k in range(clkcount):
-            theta_inter[k].append((theta[k],theta[k]))
-            phi_inter[k].append((phi[k],phi[k]))
-            deltaf_inter[k].append((deltaf[k],deltaf[k]))
+            frame_inter[k].append(theta[k])
+            theta_inter[k].append(theta[k])
+            phi_inter[k].append(phi[k])
+            deltaf_inter[k].append(deltaf[k])
 
 
     curframe = queue_frame.pop(0)
     curclk = queue_clk.pop(0)
 
-    #print("Initial phi: " + str(phi))
-    #print("Initial theta: " + str(theta))
 
     # These two must sum to 1!
     emit_frac = 1/2;
     adjust_frac = 1-emit_frac;
 
 
+    # Set the previous adjust frame as 1 period behind
+    for k in range(clkcount):
+        prev_adjustframe[k] = theta[k] - round(phi[k]*emit_frac) + phi_minmax[1]
+        if prev_adjustframe[k] < 0:
+            prev_adjustframe[k] = 0
 
+
+
+
+
+    # Main loop
     while curframe < max_frame:
 
         # ----------------
         # Emit phase
         if emit[curclk]:
+            
 
             minframe = curframe-offset
             maxframe = curframe+offset+1
@@ -213,41 +207,47 @@ def runsim(p,ctrl):
             # ------
             # Barycenter calculation
             winmax = curframe
-            winmin = winmax-(phi[curclk]+pulse_len-1)
+            winmin = prev_adjustframe[curclk]
             winlen = winmax-winmin
 
-            #TO DO: fix adjust window to be up to last adjust!
+            prev_adjustframe[curclk] = curframe
 
-            barycenter_range = range(winmin, winmax)
-            barypos, baryneg, corpos, corneg = calc_both_barycenters(p, channels[curclk,barycenter_range])
+
+            if winlen > pulse_len + 1:
+                barycenter_range = range(winmin, winmax)
+                barypos, baryneg, corpos, corneg = calc_both_barycenters(p, channels[curclk,barycenter_range])
+            else:
+                barypos = winlen - wait_til_adjust[curclk]
+                baryneg = barypos
 
 
 
             # -------
             # TO and CFO calculation
             TO = int(round((barypos+baryneg)/2))
-            TO += -1*(winlen) + wait_til_adjust[curclk] + offset # adjust with respect to past pulse
+            TO += -1*winlen + wait_til_adjust[curclk]  # adjust with respect to past pulse
+
 
             CFO = (barypos-baryneg - p.basewidth) / (p.baryslope)
 
 
             # --------
             # TO and CFO correction
-            TO_correction = TO/2
+            TO_correction = round(TO/2)
             theta[curclk] += TO_correction
             theta[curclk] = theta[curclk] % phi[curclk]
 
             if do_CFO_correction[curclk] > CFO_step_wait:
-                CFO_correction = CFO/2
+                CFO_correction = CFO/4
                 deltaf[curclk] += CFO_correction/p.f_symb
             else:
                 do_CFO_correction[curclk] += 1
-                #print(theta)
 
             if ctrl['keep_intermediate_values']:
-                theta_inter[curclk].append((curframe,theta[curclk]))
-                phi_inter[curclk].append((curframe,phi[curclk]))
-                deltaf_inter[curclk].append((curframe,deltaf[curclk]))
+                frame_inter[curclk].append(curframe)
+                theta_inter[curclk].append(theta[curclk])
+                phi_inter[curclk].append(phi[curclk])
+                deltaf_inter[curclk].append(deltaf[curclk])
 
 
 
@@ -287,9 +287,13 @@ def runsim(p,ctrl):
     ctrl['phi'] = phi
 
     if ctrl['keep_intermediate_values']:
+        ctrl['frame_inter'] = frame_inter
         ctrl['theta_inter'] = theta_inter
         ctrl['deltaf_inter'] = deltaf_inter
         ctrl['phi_inter'] = phi_inter
+
+    if ctrl['saveall']:
+        ctrl.update(p.__dict__)
     
     
 
@@ -303,11 +307,14 @@ def runsim(p,ctrl):
 
     1. Make scheduler a single list of tuples. In fact, consider a different data strucutre for schedule
 
-    2. The topo_matrix is iterated through. Try to make 3d topo_matrix to save on that iteration (will increase
-    memory usage)
+    2. The topo_matrix is iterated through. Try to make 3d topo_matrix to save on that iteration
 
     3. Skip emitting in your own channel times zero. (very small increase)
 
     4. Fold in "ordered insert" in the while loop to save on the function call.
 
     """
+
+
+
+

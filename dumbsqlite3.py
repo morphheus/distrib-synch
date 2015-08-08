@@ -1,7 +1,7 @@
 #!/usr/bin/env python
+"""Simple and easy way to shove data into a single SQL table."""
 
-
-from lib import *
+import numpy as np
 import sqlite3
 import io
 
@@ -46,11 +46,9 @@ def convert_array(text):
 
 
 
-
-
-
 #----------------------
 def connect(dbase_file=DEF_DB):
+    
     # Converts np.array to TEXT when inserting
     sqlite3.register_adapter(np.ndarray, adapt_array)
 
@@ -59,6 +57,11 @@ def connect(dbase_file=DEF_DB):
 
     conn = sqlite3.connect(dbase_file, detect_types=sqlite3.PARSE_DECLTYPES)
     return conn
+
+
+
+
+
 
 
 
@@ -178,6 +181,8 @@ def fetchall(tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
         conn.close()
 
     return output
+
+
 
 
 
