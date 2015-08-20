@@ -37,12 +37,21 @@ def default_ctrl_dict():
     out['topo_matrix'] = None
     out['noise_power'] = 0
     out['phi_bounds'] = [1,1]
-    out['self_interference'] = 0
+    out['self_emit'] = False # IF set to False, the self-emit will just be skipped.
     out['CFO_step_wait'] = 60
     out['rand_init'] = False
     out['display'] = True
     out['keep_intermediate_values'] = False
     out['saveall'] = False # This options also saves all fields in Params to the control dict
+
+    # Echo controls
+    out['max_echo_taps'] = 4
+
+    # Correction controls
+    out['epsilon_TO'] = 0.5
+    out['epsilon_CFO'] = 0.25
+    out['max_CFO_correction'] = 0.02 # As a factor of f_samp
+
     return out
 
 
@@ -53,15 +62,37 @@ def default_ctrl_dict():
 #-------------------------
 def runsim(p,ctrl):
     """Executes a simulation with the signal parameters p and controls parameters ctrl"""
+
+
+    #----------------
+    # INPUTS
+    #----------------
+    
     clkcount = ctrl['clkcount']
     frameunit = ctrl['frameunit']
     chansize = ctrl['chansize']
     topo_matrix = ctrl['topo_matrix']
     noise_power = ctrl['noise_power']
     phi_bounds = ctrl['phi_bounds']
-    self_interference = ctrl['self_interference']
+    self_emit = ctrl['self_emit']
     CFO_step_wait = ctrl['CFO_step_wait']
+    epsilon_TO = ctrl['epsilon_TO']
+    epsilon_CFO = ctrl['epsilon_CFO']
 
+    # IF echoes specified, to shove in array. OW, just don't worry about it
+    do_echoes = True
+    try:
+        echo_delay = ctrl['echo_delay']
+        echo_amp = ctrl['echo_amp']
+        max_echo_taps = ctrl['max_echo_taps']
+    except KeyError:
+        max_echo_taps = 1
+        ctrl['max_taps'] = max_echo_taps
+        echo_delay = np.zeros((clkcount,clkcount,1), dtype='i8')
+        echo_amp = np.ones((clkcount,clkcount,1))
+        ctrl['echo_delay'] = echo_delay
+        ctrl['echo_amp'] = echo_amp
+    
     analog_pulse = p.analog_sig
 
     # INPUT EXCEPTIONS
@@ -75,10 +106,6 @@ def runsim(p,ctrl):
     # VARIABLE DECLARATIONS
     #----------------------
 
-    if topo_matrix == None:
-        topo_matrix = np.ones(clkcount**2).reshape(clkcount,-1)
-        ctrl['topo_matrix'] = topo_matrix
-
 
     global queue_frame, queue_clk
     queue_frame = []
@@ -86,7 +113,7 @@ def runsim(p,ctrl):
     pulse_len = len(analog_pulse)
     offset = int((pulse_len-1)/2)
     channels = cplx_gaussian( [clkcount,chansize],noise_power) 
-    max_frame = chansize-offset;
+    max_frame = chansize-offset-np.max(echo_delay);
     wait_til_adjust = np.zeros(clkcount, dtype='int64')
     wait_til_emit = np.zeros(clkcount, dtype='int64')
     prev_adjustframe = np.zeros(clkcount, dtype='int64')
@@ -113,27 +140,24 @@ def runsim(p,ctrl):
 
     else:
         phi = np.random.randint(phi_minmax[0],phi_minmax[1]+1, size=clkcount)
-        #theta = np.round((np.arange(clkcount)/(2*(clkcount-1))+0.25) * frameunit)
-        theta = np.zeros(clkcount) + round(frameunit/2)
+        theta = np.round((np.arange(clkcount)/(2*(clkcount-1))+0.25) * frameunit)
+        #theta = np.zeros(clkcount) + round(frameunit/2)
         theta = theta.astype(int)
-        deltaf = (np.arange(clkcount)**2 - clkcount/2)/clkcount**2 * deltaf_minmax[1]
-        #deltaf = np.zeros(clkcount)
+        #deltaf = (np.arange(clkcount)**2 - clkcount/2)/clkcount**2 * deltaf_minmax[1]
+        deltaf = np.zeros(clkcount)
         clk_creation = np.zeros(clkcount)
 
     
-    # Modifications to the topology matrix
-    np.fill_diagonal(topo_matrix,self_interference)
-    topo_matrix = topo_matrix + 0+0j # Making Topo_Matrix a complex array
-    deltaf_matrix = np.empty(clkcount**2, dtype='int64').reshape(clkcount,-1) + 0j
 
     # First events happen on initial phase shift
     for clknum, frame in enumerate(theta):
         ordered_insert(frame+phi_minmax[1],clknum) # the + offset is to prevent accessing negative frames
 
+    # Correction algorithms variables
+    max_CFO_correction = ctrl['max_CFO_correction']*p.f_samp
+
     # Release unused variables:
     del frame, clknum
-
-
 
 
 
@@ -185,10 +209,18 @@ def runsim(p,ctrl):
             spread = range(minframe,maxframe)
 
             deltaf_arr = np.empty(pulse_len)
-            for k in range(clkcount):
+            for emitclk in range(clkcount):
+                if self_emit and emitclk == curclk: # Skip selfemission
+                    continue
                 time_arr = (np.arange(minframe,maxframe) + clk_creation[curclk] )/p.f_samp 
-                deltaf_arr = np.exp( 2*pi*1j* (deltaf[curclk] - deltaf[k])  *( time_arr))
-                channels[k,spread] += analog_pulse*topo_matrix[curclk,k]*deltaf_arr
+                deltaf_arr = np.exp( 2*pi*1j* (deltaf[curclk] - deltaf[emitclk])  *( time_arr))
+
+                #Echoes management
+                for k in range(max_echo_taps):
+                    curr_amp = echo_amp[curclk][emitclk][k]
+                    if curr_amp != 0:
+                        to_emit = analog_pulse*deltaf_arr
+                        channels[emitclk, spread + echo_delay[curclk][emitclk][k]] += to_emit*curr_amp
 
             # Set next event
             wait_til_adjust[curclk] = math.floor(phi[curclk]*adjust_frac)
@@ -233,12 +265,18 @@ def runsim(p,ctrl):
 
             # --------
             # TO and CFO correction
-            TO_correction = round(TO/2)
+            TO_correction = round(TO*epsilon_TO)
             theta[curclk] += TO_correction
             theta[curclk] = theta[curclk] % phi[curclk]
 
             if do_CFO_correction[curclk] > CFO_step_wait:
-                CFO_correction = CFO/4
+                CFO_correction = CFO*epsilon_CFO
+
+                if CFO_correction > max_CFO_correction:
+                    CFO_correction = max_CFO_correction
+                elif CFO_correction < -1*max_CFO_correction:
+                    CFO_correction = -1*max_CFO_correction
+                
                 deltaf[curclk] += CFO_correction/p.f_symb
             else:
                 do_CFO_correction[curclk] += 1

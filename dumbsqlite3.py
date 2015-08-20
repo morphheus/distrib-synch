@@ -4,6 +4,7 @@
 import numpy as np
 import sqlite3
 import io
+from lib import build_timestamp_id
 
 
 # Default values
@@ -34,6 +35,10 @@ def adapt_array(arr):
     return sqlite3.Binary(out.read())
 
 
+#---------------------
+def adapt_list(lst):
+    bin_list = bytes(repr(lst), 'ascii')
+    return sqlite3.Binary(bin_list)
 
 
 #----------------------
@@ -44,16 +49,22 @@ def convert_array(text):
 
 
 
+#----------------------
+def convert_list(text):
+    return(eval(text))
+
+
+
 
 
 #----------------------
 def connect(dbase_file=DEF_DB):
     
-    # Converts np.array to TEXT when inserting
     sqlite3.register_adapter(np.ndarray, adapt_array)
+    sqlite3.register_adapter(list, adapt_list)
 
-    # Converts TEXT to np.array when selecting
     sqlite3.register_converter("ARRAY", convert_array)
+    sqlite3.register_converter("LIST", convert_list)
 
     conn = sqlite3.connect(dbase_file, detect_types=sqlite3.PARSE_DECLTYPES)
     return conn
@@ -67,7 +78,7 @@ def connect(dbase_file=DEF_DB):
 
 
 #----------------------
-def init(dbase_file, table_name=DEF_TABLE):
+def init(dbase_file=DEF_DB, table_name=DEF_TABLE):
     conn = sqlite3.connect(dbase_file)
     c = conn.cursor()
 
@@ -84,8 +95,19 @@ def init(dbase_file, table_name=DEF_TABLE):
              'str':'TEXT',\
              'ndarray':'ARRAY',\
              'float':'REAL',\
+             'list':'LIST'\
              }
-    #TODO: auto type assoc creation
+    
+    c.execute("CREATE TABLE {} (ptype TEXT PRIMARY KEY, stype TEXT)"\
+              .format(DEF_ASSOC_TABLE))
+
+
+    for key, val in type_assoc.items():
+        c.execute("INSERT INTO {} (ptype, stype)VALUES(?,?)".\
+                  format(DEF_ASSOC_TABLE), [key, val])
+
+    
+    
     conn.commit()
     conn.close()
 
@@ -93,8 +115,7 @@ def init(dbase_file, table_name=DEF_TABLE):
 
 
 #---------------------
-def get_type_assoc(dbase_file=DEF_DB, tn_assoc=DEF_ASSOC_TABLE):
-    conn = sqlite3.connect(dbase_file)
+def get_type_assoc(conn, tn_assoc=DEF_ASSOC_TABLE):
     c = conn.cursor()
     cursor = c.execute('select * from ' + tn_assoc)
     return dict(cursor.fetchall())
@@ -111,11 +132,12 @@ def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
         conn = connect(dbase_file)
         closeconn = True
 
+
     c = conn.cursor()
     cursor = c.execute('select * from ' + tn)
     dbcols = [x[0] for x in cursor.description]
     datacols = list(data.keys())
-    type_assoc = get_type_assoc()
+    type_assoc = get_type_assoc(conn)
 
     # Exceptions in input data dict
     if not __PRIMARY in datacols:

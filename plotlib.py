@@ -2,6 +2,8 @@
 
 from lib import *
 
+GRAPH_OUTPUT_LOCATION = 'graphs/' # don't forget the trailing slash
+GRAPH_OUTPUT_FORMAT = 'eps'
 
 ###################
 # BASE GRAPHS
@@ -19,13 +21,15 @@ def discrete(*args):
         y = args[0]
         x = np.arange(len(y))
 
+    fh = plt.figure()
+
     plt.plot((x, x) , (y, np.zeros(len(y))), 'k-')
     #plt.scatter(x, y, marker='.')
     #plt.plot(indep_ax,curve,'k-')
     x_lims = [min(x), max(x)]
     plt.plot(x_lims, [0,0], 'k-')
     plt.xlim(x_lims)
-    return plt
+    return fh
 
 
 #---------------------
@@ -40,12 +44,14 @@ def continuous(*args):
         y = args[0]
         x = np.arange(len(y))
 
+    fh = plt.figure()
     plt.plot(x, y, 'k-')
     #plt.scatter(x, y, marker='.')
     #plt.plot(indep_ax,curve,'k-')
     x_lims = [min(x), max(x)]
     plt.xlim(x_lims)
-    
+
+    return fh
 
 
 
@@ -59,21 +65,29 @@ def continuous(*args):
 
 
 #-------------------------
-def hair(frames,param):
+def hair(frames,param, y_label='Parameter', savename=''):
     """Plots an evolution graph of the parameter of"""
     # Frames: frame_inter output from the simulation
     # Param:  <param>_inter output from the simulation
+
+    fh = plt.figure()
     for flist, plist in zip(frames,param):
-        continuous(flist,plist)
+        plt.plot(flist,plist, 'k-')
 
     xmin = max([x[0] for x in frames])
     xmax = max([x[-1] for x in frames])
     plt.xlim([xmin,xmax])
+    plt.xlabel('Frame')
+    plt.ylabel(y_label)
+
+
+    save(savename)
+    return fh
 
 
 
 #---------------
-def barywidth(*args, **kwargs):
+def barywidth(*args, savename='', **kwargs):
     """Accepts either a Params() object or two iterables representing the CFO and the barywidth"""
 
 
@@ -89,12 +103,16 @@ def barywidth(*args, **kwargs):
 
     plt.plot(CFO,barywidths)
     plt.plot((0,0), (min(barywidths),max(barywidths)))
-    plt.show()
 
+    plt.xlabel('CFO (f_samp)')
+    plt.ylabel('Barycenter width')
+    
+
+    save(savename)
 
 
 #----------------
-def crosscorr(*args):
+def crosscorr(*args, savename=''):
     """Builds a crosscorrelation graph.
     Accepted inputs:
     (<class 'Params'>)      will plot the crosscorrelation with the analog signal 
@@ -110,80 +128,69 @@ def crosscorr(*args):
         raise Exception('Wrong number of arguments')
 
     discrete(x,y)
+    save(savename)
 
 
 
 #----------------
-def analog_graph():
-    params = Params()
-    params.zc_len = 11
-    params.f_samp = 2
-    params.f_symb = 1
-    params.repeat = 1
-    params.full_sim = False
-    params.update()
-    
-    tmp = test_crosscorr(params)
-    y = tmp.analog_sig
+def analog_graph(p, savename=''):
+    y = abs(p.analog_hair)
     x = np.arange(len(y)) - len(y)/2 + 0.5
-    plt.plot((x, x) , (y, np.zeros(len(y))), 'k-')
-    #plt.scatter(x, y, marker='.')
-    #plt.plot(indep_ax,curve,'k-')
-    x_lims = [min(x), max(x)]
-    plt.plot(x_lims, [0,0], 'k-')
-    plt.xlim(x_lims)
 
-    plt.show()
+    fh = discrete(x,y)
+    
+    plt.xlabel('n')
+    plt.ylabel('|x(n)|')
+    
+    save(savename)
+    return fh
 
 
 
 
 #------------------
-def modulated_zpos_graph():
-    params = Params()
-    params.zc_len = 11
-    params.f_samp = 10
-    params.f_symb = 1
-    params.spacing = 2
+def analog_zpos(p, savename=''):
     
-    tmp = test_crosscorr(params)
-    y = abs(tmp.analog_zpos)
+    
+    y = abs(p.analog_zpos)
     x = np.arange(len(y)) - len(y)/2 + 0.5
-    plt.plot((x, x) , (y, np.zeros(len(y))), 'k-')
-    #plt.scatter(x, y, marker='.')
-    #plt.plot(indep_ax,curve,'k-')
-    x_lims = [min(x), max(x)]
-    plt.plot(x_lims, [0,0], 'k-')
-    plt.xlim(x_lims)
+    x = x/p.f_samp
+    
+    fh = discrete(x,y)
 
-    plt.show()
+    plt.xlabel('t')
+    plt.ylabel('|z(t)|')
 
+    
+    
+    return fh
 
 
 #----------------
-def pulse_graph():
-    params = Params()
-    params.zc_len = 151
-    params.plen = 19
-    params.rolloff = 0.2
-    params.f_samp = 12
-    params.f_symb = 3
-    params.repeat = 1
-    params.power_weight = 4
-    params.CFO = 0
-    params.TO = 0
-    params.full_sim = False
-    params.bias_removal = 0
+def pulse(p):
     
-    params.update()
-    
-    y = np.real(params.pulse)
+    y = np.real(p.pulse)
     x = np.arange(len(y)) - len(y)/2 + 0.5
-    plt.plot((x, x) , (y, np.zeros(len(y))), 'k-')
-    #plt.scatter(x, y, marker='.')
-    #plt.plot(indep_ax,curve,'k-')
-    x_lims = [min(x), max(x)]
-    plt.plot(x_lims, [0,0], 'k-')
-    plt.xlim(x_lims)
+    x = x/p.f_samp
 
+    discrete(x,y)
+
+    plt.xlabel('t')
+    plt.ylabel('p(t)')
+    
+    return x,y
+
+
+
+#------------------
+def save(name, **kwargs):
+    """Saves the current figure to """
+    if save != '':
+        fname = GRAPH_OUTPUT_LOCATION + name + '.' + GRAPH_OUTPUT_FORMAT
+        plt.savefig(fname, bbox_inches='tight', format=GRAPH_OUTPUT_FORMAT)
+    
+
+
+#------------------
+def show():
     plt.show()

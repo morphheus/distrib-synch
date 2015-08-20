@@ -16,6 +16,10 @@ warnings.simplefilter('default')
 
 
 
+
+CPLX_DTYPE = 'complex128'
+INT_DTYPE = 'int64'
+
 ########################
 # SUBROUTINES
 #######################
@@ -105,7 +109,7 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, m
 
 
 #------------------
-def d_to_a(values, pulse, spacing,dtype='complex128'):
+def d_to_a(values, pulse, spacing,dtype=CPLX_DTYPE):
     """outputs an array with modulated pulses"""
     plen = len(pulse)
      
@@ -125,7 +129,7 @@ def d_to_a(values, pulse, spacing,dtype='complex128'):
 
 
 #---------------------------
-def rcosfilter(N, a, T, f, dtype='complex128'):
+def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
     """Raised cosine:
     N: Number of samples
     a: rolloff factor (alpha)
@@ -211,8 +215,17 @@ def calc_both_barycenters(p, *args,mode='valid'):
         g = p.analog_sig
 
 
-    barypos, crosscorrpos =barycenter_correlation(p.pad_zpos, g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode) 
-    baryneg, crosscorrneg =barycenter_correlation(p.pad_zneg, g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode) 
+    if p.crosscorr_fct == 'zeropadded':
+        f1 = p.pad_zpos
+        f2 = p.pad_zneg
+    elif p.crosscorr_fct == 'analog':
+        f1 = p.analog_zpos
+        f2 = p.analog_zneg
+    else:
+        raise Exception('Invalid p.crosscorr_fct value')
+    
+    barypos, crosscorrpos =barycenter_correlation(f1 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode) 
+    baryneg, crosscorrneg =barycenter_correlation(f2 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode) 
 
     return barypos, baryneg, crosscorrpos, crosscorrneg
 
@@ -238,6 +251,8 @@ def build_timestamp_id():
 #------------------------
 def barywidth_map(p, reach=0.5, scaling=0.01):
     """Generates the barywidth map for a given range, given as a fraction of f_symb"""
+    if not (reach/scaling).is_integer():
+        raise Exception("The ratio reach/scaling must be an integer")
     
     initial_full_sim = p.full_sim
     p.full_sim= False
@@ -253,6 +268,62 @@ def barywidth_map(p, reach=0.5, scaling=0.01):
     p.full_sim = initial_full_sim
 
     return CFO, barywidths
+
+
+
+
+
+
+#------------------------
+def delay_pdf_gaussian():
+    pass
+
+
+#------------------------
+def delay_pdf_static(controls):
+    """Simple exponentially decaying echoes"""
+    taps = controls['max_echo_taps']
+   
+    delay_list = [x*controls['frameunit']*0.1376732/(taps) for x in range(taps)]
+    delays = np.array([round(x) for x in delay_list], dtype=INT_DTYPE)
+
+    amp_list = np.exp([-0.5*x for x in range(taps)])
+
+
+    amp = np.array(amp_list, dtype=CPLX_DTYPE)
+    return delays, amp
+
+
+
+
+#------------------------
+def build_delay_matrix(controls, delay_fct=delay_pdf_static):
+    """Insert documentation here"""
+    # Note that PDF functions must be declared/imported BEFORE this function definition
+
+    # ECHOES USAGE:
+    # echo_<name>[curclk][emitclk][k] = k'th echo between the two clocks. 
+    
+
+    clkcount = controls['clkcount']
+    #clkcount = 1
+    array_dtype_string = INT_DTYPE+','+CPLX_DTYPE
+    echoes = np.empty((clkcount, clkcount, controls['max_echo_taps']), dtype=array_dtype_string)
+    echoes.dtype.names = ('delay', 'amp')
+
+
+    
+    for k in range(clkcount):
+        for l in range(clkcount):
+            echoes['delay'][k][l], echoes['amp'][k][l] = delay_fct(controls)
+            
+
+
+    # TODO: Pick input delay/amp from controls
+    # TODO: don't use a structured array
+    controls['echo_delay'] = echoes['delay']
+    controls['echo_amp'] = echoes['amp']
+
 
 
 
@@ -300,6 +371,7 @@ class Params(Struct):
         self.add(init_update=False)
         self.add(init_basewidth=False)
         self.add(bias_removal=0)
+        self.add(crosscorr_fct='zeropadded')
 
 
 
@@ -380,6 +452,7 @@ class Params(Struct):
         T = 1/self.f_samp
         analog_sig = d_to_a(self.training_seq, self.pulse, self.spacing)
         analog_zpos = d_to_a(self.zpos, self.pulse, self.spacing)
+        analog_zneg = analog_zpos.conjugate()
 
         # pad zeros such as to implement TO
         if not self.full_sim:
@@ -405,6 +478,7 @@ class Params(Struct):
         self.add(pad_zneg=pad_zneg)
         self.add(analog_sig=analog_sig)
         self.add(analog_zpos=analog_zpos)
+        self.add(analog_zneg=analog_zneg)
 
 
 
