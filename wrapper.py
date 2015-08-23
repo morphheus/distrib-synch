@@ -38,25 +38,34 @@ p.crosscorr_fct = 'analog'
 p.update()
 p.calc_base_barywidth()
 
-build_delay_matrix(controls)
-runsim(p, controls); #controls['date'] = build_timestamp_id(); db.add(controls)
+
+
+#values_to_save = {'v1':np.float64(4)}
+#db.add(values_to_save, tn=sql_table_name)
+
+# REMEMBER TO RE-ENABLE BARYWIDTH SAVING!!!!!!
+graphs.barywidth(p, reach=0.05, scaling=0.001)
+graphs.show()
+
+#build_delay_matrix(controls)
+#runsim(p, controls); #controls['date'] = build_timestamp_id(); db.add(controls)
 
 #graphs.hair(controls['frame_inter'], controls['deltaf_inter'])
-#graphs.save('deltaf_hair')
+#graphs.show()
 
-graphs.hair(controls['frame_inter'], controls['theta_inter'])
-graphs.show()
+#graphs.hair(controls['frame_inter'], controls['theta_inter'])
+#graphs.show()
 
 #graphs.barywidth(p, savename='short_barywidth', reach=0.05, scaling=0.0001)
 
 #graphs.crosscorr(p)
-#graphs.save('crosscorr')
+#graphs.show()
 
 #graphs.analog_zpos(p) # TO DO WITH ZCLEN 
-#graphs.save('modulated_zpos')
+#graphs.show()
 
 #graphs.pulse(p)
-#graphs.save('pulse')
+#graphs.show()
 
 
 #graphs.show()

@@ -6,10 +6,13 @@ import bisect
 import math
 import warnings
 import time
+from sqlite3 import OperationalError
 
 from numpy import pi
 from pprint import pprint
 from scipy.signal import fftconvolve
+
+import dumbsqlite3 as db
 #from scipy.fftpack import 
 
 warnings.simplefilter('default')
@@ -235,6 +238,7 @@ def calc_both_barycenters(p, *args,mode='valid'):
 
 
 #------------------------
+
 def build_timestamp_id():
     """Builds a timestamp, and appens a random 3 digit number after it"""
     tempo = time.localtime()
@@ -247,17 +251,72 @@ def build_timestamp_id():
 
 
 
-
 #------------------------
 def barywidth_map(p, reach=0.5, scaling=0.01):
-    """Generates the barywidth map for a given range, given as a fraction of f_symb"""
+    """Generates the barywidth map for a given range, given as a fraction of f_symb
+    If the map already exists, it pulls it from the sql database instead"""
+
     if not (reach/scaling).is_integer():
         raise Exception("The ratio reach/scaling must be an integer")
+
+
+
+    dbase_file = 'barywidths.sqlite'
+    sql_table_name='barywidths'
+    conn = db.connect(dbase_file)
+    
+    # Fetch all known barywidths
+    save_skiplist = ['full_sim', 'init_update', 'init_basewidth', 'TO', 'CFO', 'basewidth', 'baryslope']
+    values_to_query = {key:p.__dict__[key] for key in p.__dict__.keys() if key not in save_skiplist}
+    values_to_query['reach'] = reach
+    values_to_query['scaling'] = scaling
+    try:
+        db_output = db.fetch_matching(values_to_query, tn=sql_table_name, get_data=False, conn=conn)
+    except OperationalError:
+        db_output = []
+
+    
+    # If we had a positive match, return the database match
+    CFO = np.arange(-reach*p.f_symb, reach*p.f_symb, scaling*p.f_symb)
+    if db_output:
+        tmp = db.fetchone(db_output[0][0],'barywidths', conn=conn, tn=sql_table_name)
+        conn.close()
+        return CFO, tmp
+    
+    
+    # Outputs which entry isn't matching DEBUG CODE
+    if False:
+        db_output = db.fetchall(tn=sql_table_name)
+        collist = db.fetch_collist(tn=sql_table_name)
+
+        db_a = db_output[0][collist.index('analog_sig')]
+        mem_a = p.analog_sig
+        warnings.filterwarnings('ignore')
+        for k,col in enumerate(collist):
+            try:
+                if db_output[0][k] == p.__dict__[col]:
+                    string = '-'*5
+                else:
+                    string = 'x'*5
+                print(string + ' ' + col)
+            except (ValueError):
+                if (db_output[0][k]==p.__dict__[col]).all():
+                    string = '-'*5
+                else:
+                    string = 'x'*5
+                print(string + ' ' + col)
+            except KeyError:
+                pass
+    
+
+
+    
+    # If nothing in database, calculate a new set of bayrwidths and save it 
+    print('Generating barywidth map...')
     
     initial_full_sim = p.full_sim
-    p.full_sim= False
+    p.full_sim = False
 
-    CFO = np.arange(-reach*p.f_symb, reach*p.f_symb, scaling*p.f_symb)
     barywidths = np.empty(len(CFO))
     for k, val in enumerate(CFO):
         p.CFO = val
@@ -265,8 +324,21 @@ def barywidth_map(p, reach=0.5, scaling=0.01):
         barypos, baryneg, _, _ = calc_both_barycenters(p)
         barywidths[k] = barypos - baryneg
 
+    p.CFO = 0
     p.full_sim = initial_full_sim
+    p.update() # Set everything back to normal
 
+    # Save all values used to generate the map into the database for caching
+    values_to_save = {key:p.__dict__[key] for key in p.__dict__.keys() if key not in save_skiplist}
+    values_to_save['reach'] = reach
+    values_to_save['scaling'] = scaling
+    values_to_save['barywidths'] = barywidths
+    values_to_save['date'] = db.build_timestamp_id()
+
+    db.add(values_to_save, tn=sql_table_name, conn=conn)
+
+
+    conn.close()
     return CFO, barywidths
 
 
@@ -371,7 +443,7 @@ class Params(Struct):
         self.add(init_update=False)
         self.add(init_basewidth=False)
         self.add(bias_removal=0)
-        self.add(crosscorr_fct='zeropadded')
+        self.add(crosscorr_fct='analog')
 
 
 
@@ -499,45 +571,3 @@ class Params(Struct):
 
 
 
-
-"""
-TODO:
-
-0 EMACS: implement shift-enter as return and remove one tab
-
-
-10. Implement some sort of check for the "variance" of the barycenter. In the cross
-correlation, maybe drop all entries 10% from the min?
-
-11. Find papers/textbooks on the kind of SNR that would be observed
-
-20. Consider using doubles everywhere?
-
-"""
-
-
-
-"""
-OPTIMIZATION LIST:
-
-ZADOFF:
-1. If the q, u, and oversampling are not used, just make a zadoff_lite(N) function to save on computation time
-
-
-BARYCENTER_CORRELATION()
-1. Consider a different convolution algorithm:
-http://wiki.scipy.org/Cookbook/ApplyFIRFilter
-
-2. Use mode='valid' instead of full (to save on some computation). This will require adjusting the value of the output, as the cross-correlation matrix will not have the same size as g
-
-3. As zadoff-chu sequences have constant amplitude, maybe you could only store the phase? instead
-of real & imaginary part
-
-4. Comsider using complex 64 or *gasp* complex32
-
-NODES:
-make a Nodes class instead of multiple single nodes.
-
-test_crosscorr
-
-"""
