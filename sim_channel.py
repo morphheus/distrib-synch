@@ -43,6 +43,7 @@ def default_ctrl_dict():
     out['display'] = True
     out['keep_intermediate_values'] = False
     out['saveall'] = False # This options also saves all fields in Params to the control dict
+    out['cfo_mapper_fct'] = cfo_mapper_linear
 
     # Echo controls
     out['max_echo_taps'] = 4
@@ -78,6 +79,7 @@ def runsim(p,ctrl):
     CFO_step_wait = ctrl['CFO_step_wait']
     epsilon_TO = ctrl['epsilon_TO']
     epsilon_CFO = ctrl['epsilon_CFO']
+    cfo_mapper_fct = ctrl['cfo_mapper_fct']
 
     # IF echoes specified, to shove in array. OW, just don't worry about it
     do_echoes = True
@@ -129,7 +131,7 @@ def runsim(p,ctrl):
     
     # Clock initial values
     phi_minmax = [round(x*frameunit) for x in phi_bounds]
-    deltaf_minmax = [-0.05,0.05]*p.f_symb
+    deltaf_minmax = np.array([-0.02,0.02])*p.f_symb
     do_CFO_correction = np.zeros(clkcount)
 
     if ctrl['rand_init']:
@@ -143,7 +145,7 @@ def runsim(p,ctrl):
         theta = np.round((np.arange(clkcount)/(2*(clkcount-1))+0.25) * frameunit)
         #theta = np.zeros(clkcount) + round(frameunit/2)
         theta = theta.astype(int)
-        #deltaf = (np.arange(clkcount)**2 - clkcount/2)/clkcount**2 * deltaf_minmax[1]
+        deltaf = ((np.arange(clkcount)**2 - clkcount/2)/clkcount**2) * deltaf_minmax[1]
         deltaf = np.zeros(clkcount)
         clk_creation = np.zeros(clkcount)
 
@@ -154,7 +156,7 @@ def runsim(p,ctrl):
         ordered_insert(frame+phi_minmax[1],clknum) # the + offset is to prevent accessing negative frames
 
     # Correction algorithms variables
-    max_CFO_correction = ctrl['max_CFO_correction']*p.f_samp
+    max_CFO_correction = ctrl['max_CFO_correction']*p.f_symb
 
     # Release unused variables:
     del frame, clknum
@@ -260,7 +262,7 @@ def runsim(p,ctrl):
             TO += -1*winlen + wait_til_adjust[curclk]  # adjust with respect to past pulse
 
 
-            CFO = (barypos-baryneg - p.basewidth) / (p.baryslope)
+            CFO = cfo_mapper_fct(barypos-baryneg, p)
 
 
             # --------
@@ -277,7 +279,7 @@ def runsim(p,ctrl):
                 elif CFO_correction < -1*max_CFO_correction:
                     CFO_correction = -1*max_CFO_correction
                 
-                deltaf[curclk] += CFO_correction/p.f_symb
+                deltaf[curclk] += CFO_correction
             else:
                 do_CFO_correction[curclk] += 1
 

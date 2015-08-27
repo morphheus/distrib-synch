@@ -252,9 +252,11 @@ def build_timestamp_id():
 
 
 #------------------------
-def barywidth_map(p, reach=0.5, scaling=0.01):
+def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False):
     """Generates the barywidth map for a given range, given as a fraction of f_symb
     If the map already exists, it pulls it from the sql database instead"""
+
+    """It also does a linear regression to the data"""
 
     if not (reach/scaling).is_integer():
         raise Exception("The ratio reach/scaling must be an integer")
@@ -266,24 +268,34 @@ def barywidth_map(p, reach=0.5, scaling=0.01):
     conn = db.connect(dbase_file)
     
     # Fetch all known barywidths
-    save_skiplist = ['full_sim', 'init_update', 'init_basewidth', 'TO', 'CFO', 'basewidth', 'baryslope']
-    values_to_query = {key:p.__dict__[key] for key in p.__dict__.keys() if key not in save_skiplist}
+    save_skiplist = ['full_sim', 'init_update', 'init_basewidth', 'TO', 'CFO']
+    query_skiplist = save_skiplist + ['basewidth', 'baryslope', 'order2fit']
+    values_to_query = {key:p.__dict__[key] for key in p.__dict__.keys() if key not in query_skiplist}
     values_to_query['reach'] = reach
     values_to_query['scaling'] = scaling
     try:
-        db_output = db.fetch_matching(values_to_query, tn=sql_table_name, get_data=False, conn=conn)
+        db_output = db.fetch_matching(values_to_query, tn=sql_table_name, get_data=False, conn=conn, dbase_file=dbase_file)
     except OperationalError:
         db_output = []
 
     
-    # If we had a positive match, return the database match
-    CFO = np.arange(-reach*p.f_symb, reach*p.f_symb, scaling*p.f_symb)
-    if db_output:
-        tmp = db.fetchone(db_output[0][0],'barywidths', conn=conn, tn=sql_table_name)
+    # If we had a positive match, return the database match, or delete it if force enabled
+    CFO_halflen = round(reach/scaling)
+    CFO = np.arange(-CFO_halflen,CFO_halflen)*scaling*p.f_symb
+    index_zero = round(len(CFO)/2)
+    
+    if db_output and not force_calculate:
+        tmp = db.fetch_cols(db_output[0][0], ['baryslope', 'basewidth', 'barywidths', 'order2fit'], conn=conn, tn=sql_table_name)
         conn.close()
-        return CFO, tmp
-    
-    
+        p.add(baryslope=tmp[0])
+        p.add(basewidth=tmp[1])
+        p.add(order2fit=tmp[3])
+        p.init_basewidth = True
+        return CFO, tmp[2]
+    elif db_output and force_calculate:
+        db.del_row(db_output[0][0], conn=conn, tn=sql_table_name)
+
+
     # Outputs which entry isn't matching DEBUG CODE
     if False:
         db_output = db.fetchall(tn=sql_table_name)
@@ -328,13 +340,27 @@ def barywidth_map(p, reach=0.5, scaling=0.01):
     p.full_sim = initial_full_sim
     p.update() # Set everything back to normal
 
+    
+    # FITTINGS
+    p.init_basewidth = True
+    basewidth = barywidths[index_zero]
+    p.add(basewidth=basewidth)
+
+    # Linear fit
+    fit = np.polyfit(CFO, barywidths, 1)
+    p.add(baryslope=fit[0])
+
+    # 2nd degree fit
+    fit = np.polyfit(CFO, barywidths, 2)
+    p.add(order2fit=fit)
+
     # Save all values used to generate the map into the database for caching
     values_to_save = {key:p.__dict__[key] for key in p.__dict__.keys() if key not in save_skiplist}
     values_to_save['reach'] = reach
     values_to_save['scaling'] = scaling
     values_to_save['barywidths'] = barywidths
     values_to_save['date'] = db.build_timestamp_id()
-
+    
     db.add(values_to_save, tn=sql_table_name, conn=conn)
 
 
@@ -345,9 +371,27 @@ def barywidth_map(p, reach=0.5, scaling=0.01):
 
 
 
+#-------------------------
+def cfo_mapper_linear(barywidth, p):
+    tmp = (barywidth - p.basewidth) / (p.baryslope)
+    return tmp
+
+#-------------------------
+def cfo_mapper_order2(barywidth, p):
+    poly = p.order2fit
+    poly[2] = p.basewidth - barywidth
+    roots = np.real(np.roots(poly))
+    
+    # Output the CFO matching the increasing x-value of the curve
+    if poly[0] > 0:
+        return np.max(roots)
+    else:
+        return np.min(roots)
+    
+
 
 #------------------------
-def delay_pdf_gaussian():
+def delay_pd_gaussian():
     pass
 
 
@@ -493,7 +537,7 @@ class Params(Struct):
         barypos, baryneg, _, _ = calc_both_barycenters(self)
         hiwidth = barypos-baryneg
         
-        slope = (hiwidth - lowidth)/(loc*2)
+        slope = (hiwidth - lowidth)/(self.CFO*2)
 
         # putting state back to proper values
         self.CFO = CFO_tmp
@@ -526,14 +570,13 @@ class Params(Struct):
         analog_zpos = d_to_a(self.zpos, self.pulse, self.spacing)
         analog_zneg = analog_zpos.conjugate()
 
-        # pad zeros such as to implement TO
+        # Apply CFO only if not running a synchronization simulation
         if not self.full_sim:
             zerocount = round(len(analog_sig))*2
             analog_sig = np.concatenate((np.zeros(zerocount- self.TO- self.trans_delay), \
                                      analog_sig, \
                                      np.zeros(zerocount + self.TO + self.trans_delay)))
         
-            # Apply CFO only if not running a synchronization simulation
             time_arr = (np.arange(len(analog_sig))+np.random.rand()*1000*len(analog_sig))*T
             CFO_arr = np.exp( 2*pi*1j*self.CFO*(time_arr - self.trans_delay))
             analog_sig = analog_sig*CFO_arr

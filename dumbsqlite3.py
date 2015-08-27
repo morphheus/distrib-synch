@@ -14,6 +14,8 @@ DEF_DB = 'simdb.sqlite'
 DEF_ASSOC_TABLE = 'type_assoc'
 
 __PRIMARY = 'date'
+__PRIMARY_TYPE = 'INTEGER'
+
 
 
 
@@ -104,12 +106,33 @@ def connect(dbase_file=DEF_DB):
 
 
 #----------------------
+def clear_table(tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
+    close_conn = False
+    if conn == False: 
+        conn = connect(dbase_file)
+        closeconn = True
+
+    field_name = __PRIMARY
+    field_type = __PRIMARY_TYPE
+    c = conn.cursor()
+
+    c.execute('DROP TABLE '+tn)
+    c.execute('CREATE TABLE {tn} ({fn} {ft} PRIMARY KEY)'\
+              .format(tn=DEF_SECONDARY_TABLE, fn=field_name, ft=field_type))
+    conn.commit()
+
+    if close_conn:
+        conn.close()
+
+
+
+#----------------------
 def init(dbase_file=DEF_DB, table_name=DEF_TABLE):
     conn = sqlite3.connect(dbase_file)
     c = conn.cursor()
 
     field_name = __PRIMARY
-    field_type = 'INTEGER'
+    field_type = __PRIMARY_TYPE
     
     #Initiate the default table, usually sim_result
     c.execute('CREATE TABLE {tn} ({fn} {ft} PRIMARY KEY)'\
@@ -270,7 +293,9 @@ def fetch_collist(tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
 
 #-----------------------
 def fetch_matching(entry_dict, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False, get_data=True):
-    """Fetches the dates entries that fully match the dict values"""
+    """Fetches the rows that matches the entry dict.
+    If get_data = False, then it only outputs the dates (not the full row): """
+
     close_conn = False
     if conn == False: 
         conn = connect(dbase_file)
@@ -301,6 +326,36 @@ def fetch_matching(entry_dict, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False, get_
 
 #-----------------------
 def fetchone(date, column , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
+    return fetch_cols(date, [column] , tn=tn, dbase_file=dbase_file, conn=conn)[0]
+
+
+
+
+#-----------------------
+def del_row(date, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
+    """Deletes the row matching the date"""
+    close_conn = False
+    if conn == False: 
+        conn = connect(dbase_file)
+        closeconn = True
+
+    c = conn.cursor()
+
+    string = "DELETE FROM " + tn + " WHERE date = " + str(date)
+    c.execute(string)
+    conn.commit()
+    
+    if close_conn:
+        conn.close()
+
+   
+
+
+
+
+
+#-----------------------
+def fetch_cols(date, collist , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
     """Fetches the columns in collist"""
     close_conn = False
     if conn == False: 
@@ -309,10 +364,11 @@ def fetchone(date, column , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
 
     c = conn.cursor()
 
-    string = "SELECT " + column + " FROM " + tn + " WHERE date = " + str(date)
+    colstring = ','.join(collist)
+    string = "SELECT " + colstring + " FROM " + tn + " WHERE date = " + str(date)
     c.execute(string)
     
     if close_conn:
         conn.close()
 
-    return c.fetchall()[0][0]
+    return c.fetchall()[0]

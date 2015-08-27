@@ -93,7 +93,7 @@ def barywidth(*args, savename='', **kwargs):
 
     if len(args) == 1 and type(args[0]).__name__ == 'Params':
         CFO, barywidths = barywidth_map(args[0], **kwargs)
-        CFO = CFO/args[0].f_symb
+        CFO = CFO
     elif len(args) == 2:
         CFO = args[0]
         barywidths = args[1]
@@ -101,10 +101,26 @@ def barywidth(*args, savename='', **kwargs):
         print("Invalid input")
 
 
-    plt.plot(CFO,barywidths)
+    
+    fit = np.empty(2)
+    fit[0] = args[0].baryslope*args[0].f_symb
+    fit[1] = args[0].basewidth
+
+
+    plt.plot(CFO/args[0].f_symb,barywidths)
     plt.plot((0,0), (min(barywidths),max(barywidths)))
 
-    plt.xlabel('CFO (f_samp)')
+    # Linear fit display
+    #fitleft = fit[0]*CFO[0] + fit[1]; fitright= fit[0]*CFO[-1] + fit[1]
+    #plt.plot((CFO[0], CFO[-1]), (fitleft, fitright))
+
+    # parabola fit display
+    fit = args[0].order2fit
+    fit_curve = fit[0]*CFO**2 + fit[1]*CFO**1 + args[0].basewidth#fit[2]
+    plt.plot(CFO/args[0].f_symb, fit_curve)
+    
+
+    plt.xlabel('CFO (f_symb)')
     plt.ylabel('Barycenter width')
     
 
