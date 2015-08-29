@@ -34,7 +34,6 @@ def default_ctrl_dict():
     out['clkcount'] = 7
     out['frameunit'] = 1000
     out['chansize'] = out['frameunit']*50
-    out['topo_matrix'] = None
     out['noise_power'] = 0
     out['phi_bounds'] = [1,1]
     out['self_emit'] = False # IF set to False, the self-emit will just be skipped.
@@ -51,7 +50,7 @@ def default_ctrl_dict():
     # Correction controls
     out['epsilon_TO'] = 0.5
     out['epsilon_CFO'] = 0.25
-    out['max_CFO_correction'] = 0.02 # As a factor of f_samp
+    out['max_CFO_correction'] = 0.02 # As a factor of f_symb
 
     return out
 
@@ -72,7 +71,6 @@ def runsim(p,ctrl):
     clkcount = ctrl['clkcount']
     frameunit = ctrl['frameunit']
     chansize = ctrl['chansize']
-    topo_matrix = ctrl['topo_matrix']
     noise_power = ctrl['noise_power']
     phi_bounds = ctrl['phi_bounds']
     self_emit = ctrl['self_emit']
@@ -145,8 +143,10 @@ def runsim(p,ctrl):
         theta = np.round((np.arange(clkcount)/(2*(clkcount-1))+0.25) * frameunit)
         #theta = np.zeros(clkcount) + round(frameunit/2)
         theta = theta.astype(int)
-        deltaf = ((np.arange(clkcount)**2 - clkcount/2)/clkcount**2) * deltaf_minmax[1]
-        deltaf = np.zeros(clkcount)
+        #theta = np.zeros(clkcount).astype(int)
+        #deltaf = ((np.arange(clkcount)**2 - clkcount/2)/clkcount**2) * deltaf_minmax[1]
+        deltaf = (np.arange(clkcount)-clkcount/2)/clkcount * deltaf_minmax[1]
+        #deltaf = np.zeros(clkcount)
         clk_creation = np.zeros(clkcount)
 
     

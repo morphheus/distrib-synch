@@ -339,6 +339,7 @@ def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False):
     p.CFO = 0
     p.full_sim = initial_full_sim
     p.update() # Set everything back to normal
+    p.add(barywidths_arr=barywidths)
 
     
     # FITTINGS
@@ -377,7 +378,7 @@ def cfo_mapper_linear(barywidth, p):
     return tmp
 
 #-------------------------
-def cfo_mapper_order2(barywidth, p):
+def cfo_mapper_order2_mk0(barywidth, p):
     poly = p.order2fit
     poly[2] = p.basewidth - barywidth
     roots = np.real(np.roots(poly))
@@ -388,6 +389,44 @@ def cfo_mapper_order2(barywidth, p):
     else:
         return np.min(roots)
     
+
+#-------------------------
+def cfo_mapper_order2_mk1(barywidth, p):
+
+    min_correction = 1*p.hill_width
+    
+    poly = p.order2fit
+    poly[2] = p.basewidth - barywidth
+    roots = np.real(np.roots(poly))
+    
+    # Output the CFO matching the increasing x-value of the curve
+    if poly[0] > 0:
+        CFO =  np.max(roots)
+    else:
+        CFO = np.min(roots)
+
+    # don't calculate CFO that is within 0.001
+    if abs(CFO) < min_correction:
+        CFO = 0
+
+    return CFO
+
+
+#-------------------------
+def cfo_mapper_injective(barywidth, p):
+    """Does direct mapping between barywidth and CFO. Requires monotone increasing barywidth map"""
+    # Works well with power_weight=8
+
+
+    # Check if injective
+    prev = p.barywidths_arr[0]-1
+    for current in p.barywidths_arr:
+        if current < prev:
+            raise Exception('p.barywidths is not monotone increasing at y = ' + str(current))
+        prev = current
+
+    exit()
+
 
 
 #------------------------
@@ -607,10 +646,12 @@ class Params(Struct):
         if not float(tmp).is_integer():
             raise ValueError('The ratio between the symbol period and sampling period must be an integer')
         self.add(spacing=self.spacing_factor*int(tmp))
-        
         self.build_analog_sig()
-        
         self.init_update = True
+
+        # width of each hill (units of frequencies)
+        hill_width = 0.05/11*self.zc_len/51 * self.f_symb
+        self.add(hill_width=hill_width)
 
 
 

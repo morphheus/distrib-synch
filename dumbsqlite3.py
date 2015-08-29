@@ -63,6 +63,9 @@ def adapt_bool(boolean):
 def adapt_float64(number):
     return float(number)
 
+def adapt_function(fct):
+    return fct.__name__
+
 
 #----------------------
 # TYPE CONVERT FUNCTIONS
@@ -83,6 +86,9 @@ def convert_bool(boolean):
 def convert_float64(number):
     return np.float64(number)
 
+def convert_function(string):
+    return eval(string)
+
 
 
 #----------------------
@@ -92,11 +98,13 @@ def connect(dbase_file=DEF_DB):
     sqlite3.register_adapter(list, adapt_list)
     sqlite3.register_adapter(bool, adapt_bool)
     sqlite3.register_adapter(np.float64, adapt_float64)
+    #sqlite3.register_adapter(;'function', adapt_function)
 
     sqlite3.register_converter("ARRAY", convert_array)
     sqlite3.register_converter("LIST", convert_list)
     sqlite3.register_converter("BOOL", convert_bool)
     sqlite3.register_converter("FLOAT64", convert_float64)
+    #sqlite3.register_converter("FUNCTION", convert_function)
 
     conn = sqlite3.connect(dbase_file, detect_types=sqlite3.PARSE_DECLTYPES)
     return conn
@@ -203,11 +211,14 @@ def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
 
     # find and add nonexistant colums when necessary.
     toadd = []
-    for x in datacols:
-        if not x in dbcols:
-            tmp = type(data[x]).__name__ # Extract python type
-            toadd.append([x,type_assoc[tmp]]) # <--- [varname, sql_type]
- 
+    try:
+        for x in datacols:
+            if not x in dbcols:
+                tmp = type(data[x]).__name__ # Extract python type
+                toadd.append([x,type_assoc[tmp]]) # <--- [varname, sql_type]
+    except KeyError as inst:
+        raise Exception("Incompatible type " + str(inst) + " for data entry '" + str(x) +"'")
+
     for x in toadd:
         c.execute("ALTER TABLE {tn} ADD COLUMN '{cn}' {ct}"\
                   .format(tn=tn, cn=x[0], ct=x[1]))
