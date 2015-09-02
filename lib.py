@@ -13,7 +13,7 @@ from pprint import pprint
 from scipy.signal import fftconvolve
 
 import dumbsqlite3 as db
-#from scipy.fftpack import 
+from scipy.optimize import curve_fit
 
 warnings.simplefilter('default')
 
@@ -39,6 +39,12 @@ def zadoff(u, N,oversampling=1,  q=0):
 
 
 
+
+#---------------------
+def step_sin(x, a, b, h, k):
+    """ x + sin(x), with the 4 canonical parameters"""
+    xval = b*(x-h)
+    return a*(xval+np.sin(xval)) + k
 
 
 
@@ -285,11 +291,13 @@ def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False):
     index_zero = round(len(CFO)/2)
     
     if db_output and not force_calculate:
-        tmp = db.fetch_cols(db_output[0][0], ['baryslope', 'basewidth', 'barywidths', 'order2fit'], conn=conn, tn=sql_table_name)
+        tmp = db.fetch_cols(db_output[0][0], ['baryslope', 'basewidth', 'barywidth_arr', 'order2fit', 'CFO_arr'], conn=conn, tn=sql_table_name)
         conn.close()
         p.add(baryslope=tmp[0])
         p.add(basewidth=tmp[1])
+        p.add(barywidth_arr=tmp[2])
         p.add(order2fit=tmp[3])
+        p.add(CFO_arr=tmp[4])
         p.init_basewidth = True
         return CFO, tmp[2]
     elif db_output and force_calculate:
@@ -342,7 +350,9 @@ def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False):
     p.add(barywidths_arr=barywidths)
 
     
+    
     # FITTINGS
+    print('Executing data fits...')
     p.init_basewidth = True
     basewidth = barywidths[index_zero]
     p.add(basewidth=basewidth)
@@ -355,11 +365,25 @@ def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False):
     fit = np.polyfit(CFO, barywidths, 2)
     p.add(order2fit=fit)
 
+    # x + sin(x) fit
+    # find the initial frequency (b). The while loop spits out the index of the first half period
+    #idx = index_zero + 1
+    #while barywidths[idx] > ( cfo[idx]*p.baryslope + p.basewidth ):
+    #    idx += 1
+
+    #init_b = 2*pi/(CFO[idx]*2)
+    #p0 = [p.baryslope/init_b, init_b, 0, p.basewidth] # Initial a,b,h,k values
+    #sin_fit = curve_fit(step_sin, CFO, barywidths, p0=p0)
+    #p.add(sin_fit=sin_fit)
+    
+    
+
     # Save all values used to generate the map into the database for caching
     values_to_save = {key:p.__dict__[key] for key in p.__dict__.keys() if key not in save_skiplist}
     values_to_save['reach'] = reach
     values_to_save['scaling'] = scaling
-    values_to_save['barywidths'] = barywidths
+    values_to_save['barywidth_arr'] = barywidths
+    values_to_save['CFO_arr'] = CFO
     values_to_save['date'] = db.build_timestamp_id()
     
     db.add(values_to_save, tn=sql_table_name, conn=conn)
@@ -378,7 +402,7 @@ def cfo_mapper_linear(barywidth, p):
     return tmp
 
 #-------------------------
-def cfo_mapper_order2_mk0(barywidth, p):
+def cfo_mapper_order2(barywidth, p):
     poly = p.order2fit
     poly[2] = p.basewidth - barywidth
     roots = np.real(np.roots(poly))
@@ -419,14 +443,28 @@ def cfo_mapper_injective(barywidth, p):
 
 
     # Check if injective
-    prev = p.barywidths_arr[0]-1
-    for current in p.barywidths_arr:
-        if current < prev:
-            raise Exception('p.barywidths is not monotone increasing at y = ' + str(current))
-        prev = current
 
-    exit()
+    #prev = p.barywidths_arr[0]-1
+    #for current in p.barywidths_arr:
+    #    if current < prev:
+    #        raise Exception('p.barywidths is not monotone increasing at y = ' + str(current))
+    #    prev = current
 
+    
+    idx = np.searchsorted(p.barywidth_arr, barywidth)
+    
+    if idx == 0 or idx == len(p.barywidth_arr):
+        # If out of bounds, just apply linear method
+        return cfo_mapper_linear(barywidth, p)
+
+    return p.CFO_arr[idx]
+
+
+#-------------------------
+def cfo_mapper_step_sin(barywidth, p):
+    """Step sin function mapper"""
+
+    return none
 
 
 #------------------------
@@ -438,9 +476,11 @@ def delay_pd_gaussian():
 def delay_pdf_static(controls):
     """Simple exponentially decaying echoes"""
     taps = controls['max_echo_taps']
+
    
     delay_list = [x*controls['frameunit']*0.1376732/(taps) for x in range(taps)]
     delays = np.array([round(x) for x in delay_list], dtype=INT_DTYPE)
+    delays += int(controls['min_delay']*controls['frameunit'])
 
     amp_list = np.exp([-0.5*x for x in range(taps)])
 

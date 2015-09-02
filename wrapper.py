@@ -14,7 +14,7 @@ p.f_samp = 40
 p.f_symb = 10
 p.repeat = 1
 p.spacing_factor = 2
-p.power_weight = 8
+p.power_weight = 16
 p.full_sim = True
 p.bias_removal = 0
 p.crosscorr_fct = 'analog'
@@ -34,19 +34,20 @@ controls['noise_power'] = 0
 controls['rand_init'] = False
 controls['max_echo_taps'] = 1
 controls['cfo_mapper_fct'] = cfo_mapper_linear
+controls['min_delay'] = 0.1 # in terms of frameunit
 controls['chansize'] = int(controls['frameunit']*steps)
 
-controls['max_CFO_correction'] = 0.02 # As a factor of f_symb
+controls['max_CFO_correction'] = 0.01 # As a factor of f_symb
 
 
-#graphs.barywidth(p, reach=0.05, scaling=0.0005); graphs.show(); exit()
+#graphs.barywidth(p, fit_type='order2', reach=0.05, scaling=0.0002, ); graphs.show(); exit()
 #graphs.pulse(p); graphs.show(); exit()
 
-barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False)
-print(len(p.analog_sig)); build_delay_matrix(controls); runsim(p, controls); controls['date'] = build_timestamp_id(); #db.add(controls)
+barywidth_map(p, reach=0.05, scaling=0.0005, force_calculate=False)
+build_delay_matrix(controls); runsim(p, controls); controls['date'] = build_timestamp_id(); #db.add(controls)
 
-graphs.hair(controls['frame_inter'], controls['deltaf_inter']); graphs.show()
-#graphs.hair(controls['frame_inter'], controls['theta_inter']); graphs.show()
+graphs.hair(controls['frame_inter'], controls['deltaf_inter'], y_label='CFO'); graphs.show()
+graphs.hair(controls['frame_inter'], controls['theta_inter'], y_label='TO'); graphs.show()
 
 #graphs.barywidth(p, savename='short_barywidth', reach=0.05, scaling=0.0001)
 

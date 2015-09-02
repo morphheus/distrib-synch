@@ -44,8 +44,10 @@ def default_ctrl_dict():
     out['saveall'] = False # This options also saves all fields in Params to the control dict
     out['cfo_mapper_fct'] = cfo_mapper_linear
 
+
     # Echo controls
     out['max_echo_taps'] = 4
+    out['min_delay'] = 0
 
     # Correction controls
     out['epsilon_TO'] = 0.5

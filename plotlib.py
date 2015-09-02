@@ -87,7 +87,7 @@ def hair(frames,param, y_label='Parameter', savename=''):
 
 
 #---------------
-def barywidth(*args, savename='', **kwargs):
+def barywidth(*args, savename='', fit_type='linear', **kwargs):
     """Accepts either a Params() object or two iterables representing the CFO and the barywidth"""
 
 
@@ -106,18 +106,24 @@ def barywidth(*args, savename='', **kwargs):
     fit[0] = args[0].baryslope*args[0].f_symb
     fit[1] = args[0].basewidth
 
+    f_symb = args[0].f_symb
 
     plt.plot(CFO/args[0].f_symb,barywidths)
     plt.plot((0,0), (min(barywidths),max(barywidths)))
 
     # Linear fit display
-    #fitleft = fit[0]*CFO[0] + fit[1]; fitright= fit[0]*CFO[-1] + fit[1]
-    #plt.plot((CFO[0], CFO[-1]), (fitleft, fitright))
-
-    # parabola fit display
-    fit = args[0].order2fit
-    fit_curve = fit[0]*CFO**2 + fit[1]*CFO**1 + args[0].basewidth#fit[2]
-    plt.plot(CFO/args[0].f_symb, fit_curve)
+    if fit_type == 'linear':
+        fitleft = fit[0]*CFO[0]/f_symb + fit[1]; fitright= fit[0]*CFO[-1]/f_symb + fit[1]
+        plt.plot((CFO[0]/args[0].f_symb, CFO[-1]/args[0].f_symb), (fitleft, fitright))
+    elif fit_type == 'order2':
+        # parabola fit display
+        fit = args[0].order2fit
+        fit_curve = fit[0]*CFO**2 + fit[1]*CFO**1 + args[0].basewidth#fit[2]
+        plt.plot(CFO/args[0].f_symb, fit_curve)
+    elif fit_type == 'step_sin':
+        pass
+    else:
+        print('Unknown fit option. No fit displayed')
     
 
     plt.xlabel('CFO (f_symb)')
