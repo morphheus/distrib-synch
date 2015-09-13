@@ -88,20 +88,19 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, m
     cross_correlation = np.absolute(cross_correlation)
     if bias_thresh:
         """We calculate the bias to remove from the absolute of the crosscorr"""
-        
-        bias = np.sum(cross_correlation)/len(cross_correlation) * 2 
-        grid = np.meshgrid(cross_correlation,bias)
-        remove = (grid[0] < grid[1])[0]
-        cross_correlation -= bias*0.999 # The 0.99 is to take care of rounding errors
-        cross_correlation[remove] = 0
+        maxval = np.max(cross_correlation)
+        bias = maxval*bias_thresh
+        cross_correlation -= bias
+        np.clip(cross_correlation, 0, float('inf'), out=cross_correlation)
 
 
     
+    # Generete stuff for weighted average
     weight = cross_correlation**power_weight
     weightsum = np.sum(weight)
     lag = np.indices(weight.shape)[0]
 
-    # If empty cross_correlation, return -1
+    # If empty cross_correlation, return -1. Otherwise, perform weighted average
     if not weightsum:
         barycenter = -1
     else:
@@ -244,7 +243,6 @@ def calc_both_barycenters(p, *args,mode='valid'):
 
 
 #------------------------
-
 def build_timestamp_id():
     """Builds a timestamp, and appens a random 3 digit number after it"""
     tempo = time.localtime()
@@ -305,7 +303,7 @@ def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False):
 
 
     # Outputs which entry isn't matching DEBUG CODE
-    if False:
+    """
         db_output = db.fetchall(tn=sql_table_name)
         collist = db.fetch_collist(tn=sql_table_name)
 
@@ -327,7 +325,7 @@ def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False):
                 print(string + ' ' + col)
             except KeyError:
                 pass
-    
+   """ 
 
 
     
@@ -347,7 +345,8 @@ def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False):
     p.CFO = 0
     p.full_sim = initial_full_sim
     p.update() # Set everything back to normal
-    p.add(barywidths_arr=barywidths)
+    p.add(barywidth_arr=barywidths)
+    p.add(CFO_arr=CFO)
 
     
     
@@ -444,11 +443,13 @@ def cfo_mapper_injective(barywidth, p):
 
     # Check if injective
 
-    #prev = p.barywidths_arr[0]-1
-    #for current in p.barywidths_arr:
-    #    if current < prev:
-    #        raise Exception('p.barywidths is not monotone increasing at y = ' + str(current))
-    #    prev = current
+    """
+    prev = p.barywidth_arr[0]-1
+    for current in p.barywidth_arr:
+        if current < prev:
+            raise Exception('p.barywidths is not monotone increasing at y = ' + str(current))
+        prev = current
+    """
 
     
     idx = np.searchsorted(p.barywidth_arr, barywidth)
@@ -491,6 +492,7 @@ def delay_pdf_static(controls):
 
 
 
+
 #------------------------
 def build_delay_matrix(controls, delay_fct=delay_pdf_static):
     """Insert documentation here"""
@@ -503,15 +505,15 @@ def build_delay_matrix(controls, delay_fct=delay_pdf_static):
     clkcount = controls['clkcount']
     #clkcount = 1
     array_dtype_string = INT_DTYPE+','+CPLX_DTYPE
-    echoes = np.empty((clkcount, clkcount, controls['max_echo_taps']), dtype=array_dtype_string)
+    echoes = np.zeros((clkcount, clkcount, controls['max_echo_taps']), dtype=array_dtype_string)
     echoes.dtype.names = ('delay', 'amp')
 
 
-    
     for k in range(clkcount):
         for l in range(clkcount):
+            if k == l:
+                continue
             echoes['delay'][k][l], echoes['amp'][k][l] = delay_fct(controls)
-            
 
 
     # TODO: Pick input delay/amp from controls
@@ -565,7 +567,7 @@ class Params(Struct):
         self.add(pulse_type='raisedcosine')
         self.add(init_update=False)
         self.add(init_basewidth=False)
-        self.add(bias_removal=0)
+        self.add(bias_removal=False)
         self.add(crosscorr_fct='analog')
 
 
@@ -686,12 +688,44 @@ class Params(Struct):
         if not float(tmp).is_integer():
             raise ValueError('The ratio between the symbol period and sampling period must be an integer')
         self.add(spacing=self.spacing_factor*int(tmp))
-        self.build_analog_sig()
+
+
+        # Find bias removal threshold if needed
+        # This will set self.bias_removal to the ratio of the height of the chirp inverted
+        # sequence to the peak in the chirp-like sequence.
+        # For cyclical crosscorrelations, this would be sqrt(N)/N
+        if self.bias_removal == True:
+            tmp_full_sim = self.full_sim
+            self.full_sim = False
+            self.build_analog_sig()
+            self.bias_removal = False
+            _, _, cpos, _ = calc_both_barycenters(self)
+            N = len(cpos)
+            max1 = np.max(cpos[math.ceil(N/2):])
+            max2 = np.max(cpos[:math.floor(N/2)])
+            
+
+            self.bias_removal = max2/max1
+
+            #Cleanup if needed
+            if tmp_full_sim:
+                self.full_sim = True
+                self.build_analog_sig()
+        # If no bias removal, just build  
+        else:
+            self.build_analog_sig()
+
+
+
+        # Build analog sig and finish:
         self.init_update = True
 
+
+
+        #LEGACY
         # width of each hill (units of frequencies)
-        hill_width = 0.05/11*self.zc_len/51 * self.f_symb
-        self.add(hill_width=hill_width)
+        #hill_width = 0.05/11*self.zc_len/51 * self.f_symb
+        #self.add(hill_width=hill_width)
 
 
 

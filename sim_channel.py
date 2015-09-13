@@ -133,6 +133,8 @@ def runsim(p,ctrl):
     phi_minmax = [round(x*frameunit) for x in phi_bounds]
     deltaf_minmax = np.array([-0.02,0.02])*p.f_symb
     do_CFO_correction = np.zeros(clkcount)
+    CFO_maxjump_direction = np.ones(clkcount)
+    CFO_corr_list = [[]]*clkcount
 
     if ctrl['rand_init']:
         phi = np.random.randint(phi_minmax[0],phi_minmax[1]+1, size=clkcount)
@@ -268,23 +270,34 @@ def runsim(p,ctrl):
 
 
             # --------
-            # TO and CFO correction
+            # TO correction
             TO_correction = round(TO*epsilon_TO)
             theta[curclk] += TO_correction
             theta[curclk] = theta[curclk] % phi[curclk]
 
+
+            
+            # CFO correction
             if do_CFO_correction[curclk] > CFO_step_wait:
                 CFO_correction = CFO*epsilon_CFO
-
                 if CFO_correction > max_CFO_correction:
                     CFO_correction = max_CFO_correction
                 elif CFO_correction < -1*max_CFO_correction:
+                    #CFO_maxjump_direction[curclk] *= -1
+                    #CFO_correction = CFO_maxjump_direction[curclk]*max_CFO_correction
                     CFO_correction = -1*max_CFO_correction
-                
+
+                # Median filtering
+                #CFO_corr_list[curclk].append(CFO_correction)
+                #if len(CFO_corr_list[curclk]) > 3:
+                #    CFO_corr_list[curclk].pop(0)
+                #deltaf[curclk] += np.median(CFO_corr_list[curclk])
+
                 deltaf[curclk] += CFO_correction
             else:
                 do_CFO_correction[curclk] += 1
 
+            # -------------------
             if ctrl['keep_intermediate_values']:
                 frame_inter[curclk].append(curframe)
                 theta_inter[curclk].append(theta[curclk])
