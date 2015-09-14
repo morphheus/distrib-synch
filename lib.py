@@ -492,9 +492,33 @@ def delay_pdf_static(controls):
 
 
 
+#-----------------------
+def delay_pdf_exp(controls):
+    """Uniformly distributed delay with exponentially decaying amplitudes.
+    If they delay is t, then the associated amplitude is:
+    amp = exp(-t+t_0)"""
+
+    
+    taps = controls['max_echo_taps']
+    t0 = controls['min_delay']
+
+    # Delay list uniform distributed with width of sqrt(12)*\sigma + base delay
+    delay_list = [np.random.rand()*np.sqrt(12)*controls['delay_sigma'] +t0 for x in range(taps)]
+    delay_list.sort()
+    
+
+    amp_list = [1/(x+1)**2 for x in delay_list]
+
+
+    # Convert to numpy arrayz
+    delays = np.array([round(x*controls['frameunit']) for x in delay_list], dtype=INT_DTYPE)
+    amp = np.array(amp_list, dtype=CPLX_DTYPE)
+    return delays, amp
+
+
 
 #------------------------
-def build_delay_matrix(controls, delay_fct=delay_pdf_static):
+def build_delay_matrix(controls, delay_fct=delay_pdf_exp):
     """Insert documentation here"""
     # Note that PDF functions must be declared/imported BEFORE this function definition
 

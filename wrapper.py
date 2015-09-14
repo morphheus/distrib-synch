@@ -29,13 +29,16 @@ controls['display'] = True
 controls['saveall'] = True
 controls['keep_intermediate_values'] = True
 controls['clkcount'] = 11
-controls['CFO_step_wait'] = 5
+controls['CFO_step_wait'] = 10
+controls['cfo_bias'] = 0.0008 # in terms of f_symb
 controls['noise_power'] = 0
-controls['rand_init'] = False
+controls['rand_init'] = True
 controls['max_echo_taps'] = 1
 controls['cfo_mapper_fct'] = cfo_mapper_injective
-controls['min_delay'] = 0.2 # in terms of frameunit
+controls['min_delay'] = 0.02 # in terms of frameunit
 controls['chansize'] = int(controls['frameunit']*steps)
+controls['delay_sigma'] = 0.001 # Standard deviation used for the generator delay function
+controls['delay_fct'] = delay_pdf_exp
 
 controls['max_CFO_correction'] = 0.01 # As a factor of f_symb
 
@@ -45,7 +48,9 @@ controls['max_CFO_correction'] = 0.01 # As a factor of f_symb
 #graphs.crosscorr(p); graphs.show(); exit()
 
 barywidth_map(p, reach=0.05, scaling=0.0001, force_calculate=False)
-build_delay_matrix(controls); runsim(p, controls); controls['date'] = build_timestamp_id(); #db.add(controls)
+build_delay_matrix(controls, delay_fct = controls['delay_fct']);
+#print(controls['echo_delay']); exit()
+runsim(p, controls); controls['date'] = build_timestamp_id(); #db.add(controls)
 
 graphs.hair(controls['frame_inter'], controls['deltaf_inter'], y_label='CFO'); graphs.show()
 graphs.hair(controls['frame_inter'], controls['theta_inter'], y_label='TO'); graphs.show()

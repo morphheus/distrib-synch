@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 # My modules
 from lib import *
 
@@ -44,6 +43,7 @@ def default_ctrl_dict():
     out['keep_intermediate_values'] = False
     out['saveall'] = False # This options also saves all fields in Params to the control dict
     out['cfo_mapper_fct'] = cfo_mapper_linear
+    out['cfo_bias'] = 0 # in terms of f_samp
 
 
     # Echo controls
@@ -294,6 +294,8 @@ def runsim(p,ctrl):
                 #    CFO_corr_list[curclk].pop(0)
                 #deltaf[curclk] += np.median(CFO_corr_list[curclk])
 
+
+                CFO_correction += ctrl['cfo_bias']*p.f_symb
                 deltaf[curclk] += CFO_correction
             else:
                 do_CFO_correction[curclk] += 1
