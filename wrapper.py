@@ -22,23 +22,24 @@ p.update()
 
 
 
-steps = 30
+steps = 100
 controls = default_ctrl_dict()
 controls['frameunit'] = 5000
+controls['chansize'] = int(controls['frameunit']*steps)
 controls['display'] = True
 controls['saveall'] = True
 controls['keep_intermediate_values'] = True
 controls['clkcount'] = 11
 controls['CFO_step_wait'] = 10
-controls['cfo_bias'] = 0.0008 # in terms of f_symb
-controls['noise_power'] = 0
+#controls['cfo_bias'] = 0.0008 # in terms of f_symb
+controls['deltaf_bound'] = 0
+controls['noise_std'] = 1
 controls['rand_init'] = True
 controls['max_echo_taps'] = 1
 controls['cfo_mapper_fct'] = cfo_mapper_injective
-controls['min_delay'] = 0.02 # in terms of frameunit
-controls['chansize'] = int(controls['frameunit']*steps)
-controls['delay_sigma'] = 0.001 # Standard deviation used for the generator delay function
-controls['delay_fct'] = delay_pdf_exp
+#controls['min_delay'] = 0.02 # in terms of frameunit
+#controls['delay_sigma'] = 0.001 # Standard deviation used for the generator delay function
+#controls['delay_fct'] = delay_pdf_exp
 
 controls['max_CFO_correction'] = 0.01 # As a factor of f_symb
 
@@ -47,6 +48,8 @@ controls['max_CFO_correction'] = 0.01 # As a factor of f_symb
 #graphs.pulse(p); graphs.show(); exit()
 #graphs.crosscorr(p); graphs.show(); exit()
 
+
+#print("SNR : " + str(calc_snr(controls,p)) + " dB")
 barywidth_map(p, reach=0.05, scaling=0.0001, force_calculate=False)
 build_delay_matrix(controls, delay_fct = controls['delay_fct']);
 #print(controls['echo_delay']); exit()

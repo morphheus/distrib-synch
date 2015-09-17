@@ -63,6 +63,20 @@ def cplx_gaussian(shape, noise_variance):
 
 
 
+#------------
+def calc_snr(ctrl,p):
+    """Calculates the SNR of the system provided"""
+    noise_variance = np.float64(ctrl['noise_std']**2)
+    signal_variance = np.float64(np.var(p.analog_sig))
+
+    if not noise_variance == 0:
+        snr = signal_variance/noise_variance
+    else:
+        snr = np.float64('inf')
+
+    snr_db = 10*np.log10(snr)
+    return(snr_db)
+
 
 
 

@@ -34,7 +34,7 @@ def default_ctrl_dict():
     out['clkcount'] = 7
     out['frameunit'] = 1000
     out['chansize'] = out['frameunit']*50
-    out['noise_power'] = 0
+    out['noise_std'] = 0
     out['phi_bounds'] = [1,1]
     out['self_emit'] = False # IF set to False, the self-emit will just be skipped.
     out['CFO_step_wait'] = 60
@@ -44,6 +44,8 @@ def default_ctrl_dict():
     out['saveall'] = False # This options also saves all fields in Params to the control dict
     out['cfo_mapper_fct'] = cfo_mapper_linear
     out['cfo_bias'] = 0 # in terms of f_samp
+    out['delay_fct'] = delay_pdf_static
+    out['deltaf_bound'] = 0.02
 
 
     # Echo controls
@@ -74,7 +76,7 @@ def runsim(p,ctrl):
     clkcount = ctrl['clkcount']
     frameunit = ctrl['frameunit']
     chansize = ctrl['chansize']
-    noise_power = ctrl['noise_power']
+    noise_std = ctrl['noise_std']
     phi_bounds = ctrl['phi_bounds']
     self_emit = ctrl['self_emit']
     CFO_step_wait = ctrl['CFO_step_wait']
@@ -115,7 +117,7 @@ def runsim(p,ctrl):
     queue_clk = []
     pulse_len = len(analog_pulse)
     offset = int((pulse_len-1)/2)
-    channels = cplx_gaussian( [clkcount,chansize],noise_power) 
+    channels = cplx_gaussian( [clkcount,chansize],noise_std) 
     max_frame = chansize-offset-np.max(echo_delay);
     wait_til_adjust = np.zeros(clkcount, dtype='int64')
     wait_til_emit = np.zeros(clkcount, dtype='int64')
@@ -132,7 +134,7 @@ def runsim(p,ctrl):
     
     # Clock initial values
     phi_minmax = [round(x*frameunit) for x in phi_bounds]
-    deltaf_minmax = np.array([-0.02,0.02])*p.f_symb
+    deltaf_minmax = np.array([-1*ctrl['deltaf_bound'],ctrl['deltaf_bound']])*p.f_symb
     do_CFO_correction = np.zeros(clkcount)
     CFO_maxjump_direction = np.ones(clkcount)
     CFO_corr_list = [[]]*clkcount
