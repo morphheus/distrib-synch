@@ -142,6 +142,7 @@ def runsim(p,ctrl):
     if ctrl['rand_init']:
         phi = np.random.randint(phi_minmax[0],phi_minmax[1]+1, size=clkcount)
         theta = np.random.randint(frameunit, size=clkcount)
+        #theta = np.zeros(clkcount).astype(int) + int(round(frameunit/2))
         deltaf = np.random.uniform(deltaf_minmax[0],deltaf_minmax[1], size=clkcount)
         clk_creation = np.random.randint(0,chansize, size=clkcount)
 

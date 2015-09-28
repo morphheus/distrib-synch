@@ -122,6 +122,8 @@ def barywidth(*args, savename='', fit_type='linear', **kwargs):
         plt.plot(CFO/args[0].f_symb, fit_curve)
     elif fit_type == 'step_sin':
         pass
+    elif fit_type == 'none':
+        pass
     else:
         print('Unknown fit option. No fit displayed')
     
@@ -160,8 +162,8 @@ def crosscorr(*args, savename=''):
 
 
 #----------------
-def analog_graph(p, savename=''):
-    y = abs(p.analog_hair)
+def analog(p, savename=''):
+    y = abs(p.analog_sig)
     x = np.arange(len(y)) - len(y)/2 + 0.5
 
     fh = discrete(x,y)

@@ -80,13 +80,67 @@ def calc_snr(ctrl,p):
 
 
 
+#------------
+def in_place_mov_avg(vector, wlims):
+    """Runs an in-place moving average on the input vector."""
+    # vector: input array
+    # wlen  : list/tuple/array containing the bounds of the left and right window. Must be
+    #                                      1-dimensional
+
+    # For better efficienty, wlims should be an array
+    # Make sure the input vector has a dtype of float!!
+
+    if len(wlims) != 2:
+        raise Exception('Invalid format for wlims: expected len(wlims) == 2')
+
+    # If window too small, do nothing!
+    wlen = wlims[1] + wlims[0] + 1
+    if wlen < 2: return 0
+
+
+    
+    lb = wlims[0]
+    rb = wlims[1]
+    vlen = len(vector)
+
+    # Instantiate temporary storage
+    tmp = collections.deque()
+
+    
+    # Left edge, until the window can fully fit
+    for k in range(lb):
+        tmp.append(vector[0:k+rb+1].sum()/(k+rb+1))
+
+
+    # Main moving average, where the window is fully contained in the vector
+    # Replace value whenever it is no longer necessary for future averagings
+    for k in range(lb, vlen-rb):
+        tmp.append(vector[k-lb:k+rb+1].sum()/wlen)
+        vector[k-lb] = tmp.popleft()
+
+    # Right side MA
+    for k in range(vlen-rb, vlen):
+        tmp.append(vector[k-lb:].sum()/(vlen-k+lb))
+        vector[k-lb] = tmp.popleft()
+
+    # empty the deque
+    for k in range(lb):
+        vector[vlen-lb+k] = tmp.popleft()
+
+
+
+
+
+
 #---------
-def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, mode='valid'):
+def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, mode='valid', ma_window=1):
     """Outputs the barycenter location of 'f' in 'g'. g is expected to be the
     longer array
     Note: barycenter will correspond to the entry IN THE CROSS CORRELATION
 
     bias_thresh will only weight the peaks within bias_thresh of the maximum.
+
+    ma_window will run a moving average on the cross-correlation before taking the weighted average
     
     """
     if len(g) < len(f):
@@ -108,9 +162,18 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, m
         np.clip(cross_correlation, 0, float('inf'), out=cross_correlation)
 
 
+    # in-place MA filter on the cross correlation
+    if ma_window % 2 == 0 or ma_window < 0:
+        raise Exception('Moving average window should be even and positive')
+
+    if ma_window != 1:
+        in_place_mov_avg( cross_correlation, np.array([math.floor(ma_window/2)]*2))
+
+
     
     # Generete stuff for weighted average
     weight = cross_correlation**power_weight
+    
     weightsum = np.sum(weight)
     lag = np.indices(weight.shape)[0]
 
@@ -142,10 +205,6 @@ def d_to_a(values, pulse, spacing,dtype=CPLX_DTYPE):
         idx += spacing
 
     return output
-
-
-
-
 
 
 
@@ -195,7 +254,7 @@ def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
 
 # PENDING DELETION
 #--------------------
-def test_crosscorr(p):
+#def test_crosscorr(p):
     """This function builds the sampled analog signal from the appropriate components. It then finds the two barycenters on said built signal"""
 
     if not p.init_update:
@@ -246,8 +305,8 @@ def calc_both_barycenters(p, *args,mode='valid'):
     else:
         raise Exception('Invalid p.crosscorr_fct value')
     
-    barypos, crosscorrpos =barycenter_correlation(f1 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode) 
-    baryneg, crosscorrneg =barycenter_correlation(f2 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode) 
+    barypos, crosscorrpos =barycenter_correlation(f1 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode, ma_window=p.ma_window) 
+    baryneg, crosscorrneg =barycenter_correlation(f2 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode, ma_window=p.ma_window) 
 
     return barypos, baryneg, crosscorrpos, crosscorrneg
 
@@ -276,9 +335,9 @@ def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False):
 
     """It also does a linear regression to the data"""
 
-    if not (reach/scaling).is_integer():
-        raise Exception("The ratio reach/scaling must be an integer")
 
+    if not (scaling**-1/reach**-1).is_integer():
+        warnings.warn("The ratio reach/scaling must be an integer")
 
 
     dbase_file = 'barywidths.sqlite'
@@ -302,6 +361,7 @@ def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False):
     CFO = np.arange(-CFO_halflen,CFO_halflen)*scaling*p.f_symb
     index_zero = round(len(CFO)/2)
     
+    # Fetch data if possible/allowed. If data exist but must recalc, delete existing.
     if db_output and not force_calculate:
         tmp = db.fetch_cols(db_output[0][0], ['baryslope', 'basewidth', 'barywidth_arr', 'order2fit', 'CFO_arr'], conn=conn, tn=sql_table_name)
         conn.close()
@@ -607,6 +667,8 @@ class Params(Struct):
         self.add(init_basewidth=False)
         self.add(bias_removal=False)
         self.add(crosscorr_fct='analog')
+        self.add(central_padding=0) # As a fraction of zpos length
+        self.add(ma_window=1)
 
 
 
@@ -617,7 +679,10 @@ class Params(Struct):
         """Builds training sequence from current parameters"""
         zpos = zadoff(1,self.zc_len)
         zneg = zpos.conjugate()
-        training_seq = np.concatenate(tuple([zneg]*self.repeat+[np.array([0])]+[zpos]*self.repeat))
+        zeros_count = round(self.zc_len*self.central_padding) + 1
+        if zeros_count % 2 == 0: zeros_count -= 1
+
+        training_seq = np.concatenate(tuple([zneg]*self.repeat+[np.zeros(zeros_count)]+[zpos]*self.repeat))
         #training_seq = np.concatenate(tuple([zneg]*self.repeat+[zpos]*self.repeat))
 
         self.add(zpos=zpos)
