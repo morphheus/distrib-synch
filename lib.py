@@ -30,12 +30,19 @@ INT_DTYPE = 'int64'
 
 #---------
 def zadoff(u, N,oversampling=1,  q=0):
-    """Returns a zadoff-chu sequence betwee with start and endpoints given by
-    the list"""
-
+    """Returns a zadoff-chu sequence"""
 
     x = np.linspace(0, N-1, N*oversampling, dtype='float64')
-    return np.exp(-1j*pi*u*x*(x+1+2*q)/N)
+    return np.exp(1j*pi*u*x*(x+1+2*q)/N)
+
+
+
+########################
+def cosine_zadoff_overlap(u, N,oversampling=1,  q=0):
+    """Returns a cos(un^2) sequence"""
+
+    x = np.linspace(0, N-1, N*oversampling, dtype='float64')
+    return np.cos(pi*u*x*(x+1+2*q)/N)
 
 
 
@@ -215,7 +222,7 @@ def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
     N: Number of samples
     a: rolloff factor (alpha)
     T: symbol period
-    f: sampling period
+    f: sampling rate
 
     t: time indexes associated with impulse response
     h: impulse response
@@ -254,7 +261,7 @@ def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
 
 # PENDING DELETION
 #--------------------
-#def test_crosscorr(p):
+def test_crosscorr(p):
     """This function builds the sampled analog signal from the appropriate components. It then finds the two barycenters on said built signal"""
 
     if not p.init_update:
@@ -290,6 +297,9 @@ def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
 def calc_both_barycenters(p, *args,mode='valid'):
     """Wrapper that calculates the barycenter on the specified channel. If no channel specified,
     it uses analog_sig instead"""
+    if len(args) > 1:
+        raise TypeError('Too many arguments')
+    
     if p.full_sim and len(args) > 0:
         g = args[0]
     else:
@@ -480,33 +490,13 @@ def cfo_mapper_order2(barywidth, p):
     poly[2] = p.basewidth - barywidth
     roots = np.real(np.roots(poly))
     
-    # Output the CFO matching the increasing x-value of the curve
-    if poly[0] > 0:
+    # Output the CFO matching the decreasing x-value of the curve
+    if poly[0] < 0:
         return np.max(roots)
     else:
         return np.min(roots)
     
 
-#-------------------------
-def cfo_mapper_order2_mk1(barywidth, p):
-
-    min_correction = 1*p.hill_width
-    
-    poly = p.order2fit
-    poly[2] = p.basewidth - barywidth
-    roots = np.real(np.roots(poly))
-    
-    # Output the CFO matching the increasing x-value of the curve
-    if poly[0] > 0:
-        CFO =  np.max(roots)
-    else:
-        CFO = np.min(roots)
-
-    # don't calculate CFO that is within 0.001
-    if abs(CFO) < min_correction:
-        CFO = 0
-
-    return CFO
 
 
 #-------------------------
@@ -657,7 +647,8 @@ class Params(Struct):
         self.add(trans_delay=0)
         self.add(f_samp=1) # Sampling rate
         self.add(f_symb=1) # Symbol frequency
-        self.add(zc_len=11) # Zadoff-chu length
+        self.add(zc_len=11) # Training sequence length
+        self.add(train_type='chain') # Overlap of ZC or sequence of ZC
         self.add(repeat=1) # Number of ZC sequence repeats
         self.add(spacing_factor=2) 
         self.add(power_weight=10) 
@@ -677,13 +668,23 @@ class Params(Struct):
     #------------------------------------
     def build_training_sequence(self):
         """Builds training sequence from current parameters"""
+
         zpos = zadoff(1,self.zc_len)
         zneg = zpos.conjugate()
-        zeros_count = round(self.zc_len*self.central_padding) + 1
-        if zeros_count % 2 == 0: zeros_count -= 1
 
-        training_seq = np.concatenate(tuple([zneg]*self.repeat+[np.zeros(zeros_count)]+[zpos]*self.repeat))
-        #training_seq = np.concatenate(tuple([zneg]*self.repeat+[zpos]*self.repeat))
+        # A chain of ZC
+        if self.train_type == 'chain':
+            zeros_count = round(self.zc_len*self.central_padding) + 1
+            if zeros_count % 2 == 0: zeros_count -= 1
+
+            training_seq = np.concatenate(tuple([zneg]*self.repeat+[np.zeros(zeros_count)]+[zpos]*self.repeat))
+
+        # A perfect overlap of ZC (essentially cos(x^2)
+        elif self.train_type == 'overlap':
+            training_seq = cosine_zadoff_overlap(1, self.zc_len)
+        # Wrong train_type
+        else:
+            raise ValueError('Invalid training sequence type: ' + str(self.train_type))
 
         self.add(zpos=zpos)
         self.add(training_seq=training_seq)
@@ -799,7 +800,12 @@ class Params(Struct):
         # For cyclical crosscorrelations, this would be sqrt(N)/N
         if self.bias_removal == True:
             tmp_full_sim = self.full_sim
+            tmp_train_type = self.train_type
             self.full_sim = False
+            self.train_type = 'chain'
+            
+
+            self.build_training_sequence()
             self.build_analog_sig()
             self.bias_removal = False
             _, _, cpos, _ = calc_both_barycenters(self)
@@ -811,10 +817,12 @@ class Params(Struct):
             self.bias_removal = max2/max1
 
             #Cleanup if needed
-            if tmp_full_sim:
+            if tmp_full_sim or tmp_train_type != 'train':
                 self.full_sim = True
+                self.train_type = tmp_train_type
+                self.build_training_sequence()
                 self.build_analog_sig()
-        # If no bias removal, just build  
+        # If no bias removal, or already computed, just build  
         else:
             self.build_analog_sig()
 

@@ -137,7 +137,8 @@ def runsim(p,ctrl):
     deltaf_minmax = np.array([-1*ctrl['deltaf_bound'],ctrl['deltaf_bound']])*p.f_symb
     do_CFO_correction = np.zeros(clkcount)
     CFO_maxjump_direction = np.ones(clkcount)
-    CFO_corr_list = [[]]*clkcount
+    CFO_corr_list = [[] for x in range(clkcount)]
+    TO_corr_list = [[] for x in range(clkcount)]
 
     if ctrl['rand_init']:
         phi = np.random.randint(phi_minmax[0],phi_minmax[1]+1, size=clkcount)
@@ -269,7 +270,6 @@ def runsim(p,ctrl):
             TO = int(round((barypos+baryneg)/2))
             TO += -1*winlen + wait_til_adjust[curclk]  # adjust with respect to past pulse
 
-
             CFO = cfo_mapper_fct(barypos-baryneg, p)
 
 
@@ -281,27 +281,41 @@ def runsim(p,ctrl):
 
 
             
-            # CFO correction
-            if do_CFO_correction[curclk] > CFO_step_wait:
-                CFO_correction = CFO*epsilon_CFO
-                if CFO_correction > max_CFO_correction:
-                    CFO_correction = max_CFO_correction
-                elif CFO_correction < -1*max_CFO_correction:
-                    #CFO_maxjump_direction[curclk] *= -1
-                    #CFO_correction = CFO_maxjump_direction[curclk]*max_CFO_correction
-                    CFO_correction = -1*max_CFO_correction
+            # CFO correction clipping
+            CFO_correction = CFO*epsilon_CFO
+            if CFO_correction > max_CFO_correction:
+                CFO_correction = max_CFO_correction
+            elif CFO_correction < -1*max_CFO_correction:
+                #CFO_maxjump_direction[curclk] *= -1
+                #CFO_correction = CFO_maxjump_direction[curclk]*max_CFO_correction
+                CFO_correction = -1*max_CFO_correction
 
-                # Median filtering
-                #CFO_corr_list[curclk].append(CFO_correction)
-                #if len(CFO_corr_list[curclk]) > 3:
-                #    CFO_corr_list[curclk].pop(0)
-                #deltaf[curclk] += np.median(CFO_corr_list[curclk])
+            # Median filtering
+            #CFO_corr_list[curclk].append(CFO_correction)
+            #if len(CFO_corr_list[curclk]) > 3:
+            #    CFO_corr_list[curclk].pop(0)
+            #deltaf[curclk] += np.median(CFO_corr_list[curclk])
 
 
-                CFO_correction += ctrl['cfo_bias']*p.f_symb
-                deltaf[curclk] += CFO_correction
-            else:
+            #CFO_correction += ctrl['cfo_bias']*p.f_symb
+            
+            if do_CFO_correction[curclk] <= CFO_step_wait:
+                CFO_correction = 0
                 do_CFO_correction[curclk] += 1
+
+
+            # CFO correction moving average
+            CFO_MA_trigger = 5
+            if CFO_correction != 0:
+                CFO_corr_list[curclk].append(CFO_correction)
+                if len(CFO_corr_list) >= CFO_MA_trigger:
+                    CFO_correction = sum(CFO_corr_list[curclk])/CFO_MA_trigger
+                    CFO_corr_list[curclk] = []
+            
+            
+            # apply cfo correction
+
+            deltaf[curclk] += CFO_correction
 
             # -------------------
             if ctrl['keep_intermediate_values']:

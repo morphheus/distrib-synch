@@ -140,21 +140,17 @@ def barywidth(*args, savename='', fit_type='linear', **kwargs):
 
 
 #----------------
-def crosscorr(*args, savename=''):
+def crosscorr(p, savename=''):
     """Builds a crosscorrelation graph.
-    Accepted inputs:
+    Accepted input:
     (<class 'Params'>)      will plot the crosscorrelation with the analog signal 
-    (x,y)                   where x and y are same length numpy arrays
     """
-    if len(args) == 1 and type(args[0]).__name__ == 'Params':
-        args[0].full_sim = False
-        _, _, y, _ = calc_both_barycenters(args[0],mode='same')
-        x = np.arange(len(y))# - len(y)/2 + 0.5
-    elif len(args) == 2:
-        x = args[0]
-        y = args[1]
-    else:
-        raise Exception('Wrong number of arguments')
+    tmp = p.full_sim # Save temporary fullsim value
+    p.full_sim = False
+
+    _, _, y, _ = calc_both_barycenters(p,mode='same')
+    p.full_sim = tmp # Restore entrance value
+    x = np.arange(len(y))# - len(y)/2 + 0.5
 
     discrete(x,y)
     save(savename)

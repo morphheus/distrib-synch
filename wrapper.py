@@ -6,6 +6,9 @@ import dumbsqlite3 as db
 import plotlib as graphs
 
 
+
+
+
 p = Params()
 p.zc_len = 101
 p.plen = 31
@@ -17,24 +20,26 @@ p.spacing_factor = 2
 p.power_weight = 4
 p.full_sim = True
 p.bias_removal = True
-p.central_padding = 0
 p.ma_window = 21 # number of samples i.e. after analog modulation
 p.crosscorr_fct = 'analog'
+p.train_type = 'overlap'
 p.update()
 
+#graphs.crosscorr(p); graphs.show();
+#graphs.analog(p); graphs.show();
 
 
 steps = 100
 controls = default_ctrl_dict()
-controls['frameunit'] = 5000
+controls['frameunit'] = 4000
 controls['chansize'] = int(controls['frameunit']*steps)
 controls['display'] = True
 controls['saveall'] = True
 controls['keep_intermediate_values'] = True
 controls['clkcount'] = 11
-controls['CFO_step_wait'] = 10
+controls['CFO_step_wait'] = 15
 #controls['cfo_bias'] = 0.0008 # in terms of f_symb
-controls['deltaf_bound'] = 3e-5
+controls['deltaf_bound'] = 3e-6
 controls['noise_std'] = 0
 controls['rand_init'] = True
 controls['max_echo_taps'] = 1
@@ -45,20 +50,16 @@ controls['bmap_scaling'] = 1e-6
 #controls['delay_sigma'] = 0.001 # Standard deviation used for the generator delay function
 #controls['delay_fct'] = delay_pdf_exp
 
-controls['max_CFO_correction'] = 5e-7 # As a factor of f_symb
+controls['max_CFO_correction'] = 1e-6 # As a factor of f_symb
 print(len(p.analog_sig))
 
-#graphs.barywidth(p, fit_type='linear', reach=controls['bmap_reach'], scaling=controls['bmap_scaling'] ); graphs.show(); exit()
-#graphs.pulse(p); graphs.show(); exit()
-#graphs.crosscorr(p); graphs.show(); exit()
-#graphs.analog(p); graphs.show(); exit()
+graphs.barywidth(p, fit_type='linear', reach=controls['bmap_reach'], scaling=controls['bmap_scaling'] ); graphs.show(); exit()
 
 
 print("SNR : " + str(calc_snr(controls,p)) + " dB")
 barywidth_map(p, reach=controls['bmap_reach'], scaling=controls['bmap_scaling'], force_calculate=False)
 
 build_delay_matrix(controls, delay_fct = controls['delay_fct']);
-#print(controls['echo_delay']); exit()
 runsim(p, controls); controls['date'] = build_timestamp_id(); #db.add(controls)
 
 graphs.hair(controls['frame_inter'], controls['deltaf_inter'], y_label='CFO', savename='lastCFO'); graphs.show()
@@ -66,8 +67,6 @@ graphs.hair(controls['frame_inter'], controls['theta_inter'], y_label='TO', save
 
 #graphs.barywidth(p, savename='short_barywidth', reach=0.05, scaling=0.0001)
 
-#graphs.crosscorr(p)
-#graphs.show()
 
 #graphs.analog_zpos(p) # TO DO WITH ZCLEN 
 #graphs.show()
