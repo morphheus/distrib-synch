@@ -45,7 +45,7 @@ def default_ctrl_dict():
     out['cfo_mapper_fct'] = cfo_mapper_linear
     out['cfo_bias'] = 0 # in terms of f_samp
     out['delay_fct'] = delay_pdf_static
-    out['deltaf_bound'] = 0.02
+    out['deltaf_bound'] = 0.02 # in units of f_samp
 
 
     # Echo controls
