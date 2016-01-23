@@ -157,10 +157,10 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, m
         cross_correlation = np.correlate(g, f, mode=mode)
     elif method == 'scipy':
         cross_correlation = fftconvolve(g, f.conjugate(),mode=mode)
-    else: raise ValueError("Unkwnown '" + method +"' cross")
+    else: raise ValueError("Unkwnown '" + method +"' method")
 
 
-    methodcorrelation = np.absolute(cross_correlation)
+    cross_correlation = np.absolute(cross_correlation)
     if bias_thresh:
         """We calculate the bias to remove from the absolute of the crosscorr"""
         maxval = np.max(cross_correlation)

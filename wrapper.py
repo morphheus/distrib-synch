@@ -22,7 +22,7 @@ p.full_sim = True
 p.bias_removal = True
 p.ma_window = 21 # number of samples i.e. after analog modulation
 p.crosscorr_fct = 'analog'
-p.train_type = 'overlap'
+p.train_type = 'chain'
 p.update()
 
 #graphs.crosscorr(p); graphs.show();

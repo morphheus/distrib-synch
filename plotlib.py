@@ -5,8 +5,9 @@ from lib import *
 GRAPH_OUTPUT_LOCATION = 'graphs/' # don't forget the trailing slash
 GRAPH_OUTPUT_FORMAT = 'eps'
 
+
 ###################
-# BASE GRAPHS
+# Helper functions
 ###################
 
 #---------------------
@@ -54,15 +55,23 @@ def continuous(*args):
     return fh
 
 
+#---------------------
+def save(name, **kwargs):
+    """Saves the current figure to """
+    if save != '':
+        fname = GRAPH_OUTPUT_LOCATION + name + '.' + GRAPH_OUTPUT_FORMAT
+        plt.savefig(fname, bbox_inches='tight', format=GRAPH_OUTPUT_FORMAT)
 
 
+#---------------------
+def show():
+    plt.show()
 
 
 
 ###################
 # SPECIFIC GRAPHS
 ###################
-
 
 #-------------------------
 def hair(frames,param, y_label='Parameter', savename=''):
@@ -83,7 +92,6 @@ def hair(frames,param, y_label='Parameter', savename=''):
 
     save(savename)
     return fh
-
 
 
 #---------------
@@ -108,7 +116,8 @@ def barywidth(*args, savename='', fit_type='linear', **kwargs):
 
     f_symb = args[0].f_symb
 
-    plt.plot(CFO/args[0].f_symb,barywidths)
+    
+    continuous(CFO/args[0].f_symb,barywidths)
     plt.plot((0,0), (min(barywidths),max(barywidths)))
 
     # Linear fit display
@@ -135,10 +144,6 @@ def barywidth(*args, savename='', fit_type='linear', **kwargs):
     save(savename)
 
 
-
-
-
-
 #----------------
 def crosscorr(p, savename=''):
     """Builds a crosscorrelation graph.
@@ -156,7 +161,6 @@ def crosscorr(p, savename=''):
     save(savename)
 
 
-
 #----------------
 def analog(p, savename=''):
     y = abs(p.analog_sig)
@@ -169,8 +173,6 @@ def analog(p, savename=''):
     
     save(savename)
     return fh
-
-
 
 
 #------------------
@@ -192,7 +194,7 @@ def analog_zpos(p, savename=''):
 
 
 #----------------
-def pulse(p):
+def pulse(p,savename=''):
     
     y = np.real(p.pulse)
     x = np.arange(len(y)) - len(y)/2 + 0.5
@@ -203,19 +205,10 @@ def pulse(p):
     plt.xlabel('t')
     plt.ylabel('p(t)')
     
+    save(savename)
     return x,y
 
 
 
-#------------------
-def save(name, **kwargs):
-    """Saves the current figure to """
-    if save != '':
-        fname = GRAPH_OUTPUT_LOCATION + name + '.' + GRAPH_OUTPUT_FORMAT
-        plt.savefig(fname, bbox_inches='tight', format=GRAPH_OUTPUT_FORMAT)
-    
-
-
-#------------------
-def show():
-    plt.show()
+###################
+# Helper functions
