@@ -46,6 +46,8 @@ def default_ctrl_dict():
     out['cfo_bias'] = 0 # in terms of f_samp
     out['delay_fct'] = delay_pdf_static
     out['deltaf_bound'] = 0.02 # in units of f_samp
+    out['CFO_processing_avgtype'] = 'mov_avg' # 'mov_avg' or 'reg' (non-mov avg)
+    out['CFO_processing_avgwindow'] = 5
 
 
     # Echo controls
@@ -73,6 +75,7 @@ def runsim(p,ctrl):
     # INPUTS
     #----------------
     
+    # Put important ctrl values in local namespace for faster access time
     clkcount = ctrl['clkcount']
     frameunit = ctrl['frameunit']
     chansize = ctrl['chansize']
@@ -83,6 +86,8 @@ def runsim(p,ctrl):
     epsilon_TO = ctrl['epsilon_TO']
     epsilon_CFO = ctrl['epsilon_CFO']
     cfo_mapper_fct = ctrl['cfo_mapper_fct']
+    CFO_processing_avgtype = ctrl['CFO_processing_avgtype']
+    CFO_processing_avgwindow = ctrl['CFO_processing_avgwindow']
 
     # IF echoes specified, to shove in array. OW, just don't worry about it
     do_echoes = True
@@ -135,7 +140,8 @@ def runsim(p,ctrl):
     # Clock initial values
     phi_minmax = [round(x*frameunit) for x in phi_bounds]
     deltaf_minmax = np.array([-1*ctrl['deltaf_bound'],ctrl['deltaf_bound']])*p.f_symb
-    do_CFO_correction = np.zeros(clkcount)
+    do_CFO_correction = np.array([False]*clkcount)
+    wait_CFO_correction = np.zeros(clkcount)
     CFO_maxjump_direction = np.ones(clkcount)
     CFO_corr_list = [[] for x in range(clkcount)]
     TO_corr_list = [[] for x in range(clkcount)]
@@ -299,23 +305,25 @@ def runsim(p,ctrl):
 
             #CFO_correction += ctrl['cfo_bias']*p.f_symb
             
-            if do_CFO_correction[curclk] <= CFO_step_wait:
-                CFO_correction = 0
-                do_CFO_correction[curclk] += 1
+            if wait_CFO_correction[curclk] <= CFO_step_wait:
+                wait_CFO_correction[curclk] += 1
+            else:
+                do_CFO_correction[curclk] = True
 
 
-            # CFO correction moving average
-            CFO_MA_trigger = 5
-            if CFO_correction != 0:
+            # CFO correction moving average or regular average
+            if do_CFO_correction[curclk]:
                 CFO_corr_list[curclk].append(CFO_correction)
-                if len(CFO_corr_list) >= CFO_MA_trigger:
-                    CFO_correction = sum(CFO_corr_list[curclk])/CFO_MA_trigger
+                if len(CFO_corr_list[curclk]) >= CFO_processing_avgwindow:
+                    CFO_correction = sum(CFO_corr_list[curclk])/CFO_processing_avgwindow
                     CFO_corr_list[curclk] = []
+                elif CFO_processing_avgtype == 'reg': # Moving average applies CFO at each step
+                    do_CFO_correction[curclk] = False
             
             
-            # apply cfo correction
-
-            deltaf[curclk] += CFO_correction
+            # apply cfo correction if needed
+            if do_CFO_correction[curclk]:
+                deltaf[curclk] += CFO_correction
 
             # -------------------
             if ctrl['keep_intermediate_values']:

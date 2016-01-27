@@ -13,8 +13,8 @@ p = Params()
 p.zc_len = 101
 p.plen = 31
 p.rolloff = 0.2
-p.f_samp = 4
-p.f_symb = 1
+p.f_samp = 4e6
+p.f_symb = 1e6
 p.repeat = 1
 p.spacing_factor = 2
 p.power_weight = 4
@@ -26,27 +26,29 @@ p.train_type = 'chain'
 p.update()
 
 
-steps = 60
+steps = 200
 controls = default_ctrl_dict()
 controls['frameunit'] = 4000
 controls['chansize'] = int(controls['frameunit']*steps)
 controls['display'] = True
 controls['saveall'] = True
 controls['keep_intermediate_values'] = True
-controls['clkcount'] = 5
+controls['clkcount'] = 11
 controls['CFO_step_wait'] = 10
 #controls['cfo_bias'] = 0.0008 # in terms of f_symb
 controls['deltaf_bound'] = 3e-6
-controls['noise_std'] = 0
+controls['noise_std'] = 0.1
 controls['rand_init'] = True
 controls['max_echo_taps'] = 1
 controls['cfo_mapper_fct'] = cfo_mapper_order2
-controls['bmap_reach'] = 1e-4
-controls['bmap_scaling'] = 5e-7
+controls['bmap_reach'] = 3e-6
+controls['bmap_scaling'] = 3e-8
+controls['CFO_processing_avgtype'] = 'reg'
+controls['CFO_processing_avgwindow'] = 6
 #controls['min_delay'] = 0.02 # in terms of frameunit
 #controls['delay_sigma'] = 0.001 # Standard deviation used for the generator delay function
 #controls['delay_fct'] = delay_pdf_exp
-controls['max_CFO_correction'] = 5e-6 # As a factor of f_symb
+controls['max_CFO_correction'] = 3e-6 # As a factor of f_symb
 
 #graphs.barywidth(p, fit_type='order2', reach=controls['bmap_reach'], scaling=controls['bmap_scaling'] ); graphs.show(); exit()
 
