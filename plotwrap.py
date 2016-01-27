@@ -29,7 +29,8 @@ def discrete0_pinit():
 
     graphlist= [ [graphs.crosscorr, {}],
                  [graphs.crosscorr_zneg, {}],
-                 [graphs.barywidth, {'reach':1e-4, 'scaling':1e-6}],
+                 [graphs.crosscorr_both, {}],
+                 [graphs.barywidth, {'reach':3e-5, 'scaling':3e-7}],
                  [graphs.analog, {}]
     ]
     

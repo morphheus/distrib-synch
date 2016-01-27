@@ -5,6 +5,8 @@ from lib import *
 GRAPH_OUTPUT_LOCATION = 'graphs/' # don't forget the trailing slash
 GRAPH_OUTPUT_FORMAT = 'eps'
 
+matplotlib.rcParams.update({'font.size': 14})
+
 
 ###################
 # Helper functions
@@ -49,7 +51,7 @@ def discrete(*args, repad_ratio=0.1):
 
 
 #---------------------
-def continuous(*args, repad_ratio=0.1):
+def continuous(*args, repad_ratio=0.1, label='curve0'):
     """Plots a continuous graph"""
     if len(args) < 1 and len(args) > 2:
         raise Exception("Too many or too little inputs")
@@ -63,7 +65,7 @@ def continuous(*args, repad_ratio=0.1):
     
 
     fh = plt.figure()
-    plt.plot(x, y, 'k-')
+    lh = plt.plot(x, y, 'k-', label=label)
     #plt.scatter(x, y, marker='.')
     #plt.plot(indep_ax,curve,'k-')
     x_lims = [min(x), max(x)]
@@ -173,6 +175,7 @@ def crosscorr(p, savename='', is_zpos=True):
     p.full_sim = tmp # Restore entrance value
 
     y = rpos if is_zpos else rneg
+    label = 'Leading' if is_zpos else 'Trailing'
 
     
     x = np.arange(len(y))
@@ -180,16 +183,47 @@ def crosscorr(p, savename='', is_zpos=True):
     _ , y = remove_zeropad(x,y, repad_ratio=0.05)
 
     x = np.arange(len(y)) - int(math.floor(len(y)/2))
-    continuous(x,y)
+    continuous(x,y, label=label)
     plt.xlabel('l')
     plt.ylabel('|r[l]|')
+    plt.legend()
 
     save(savename)
+    return x, y, rpos, rneg
 
 #-------------------
 def crosscorr_zneg(p, savename=''):
     """Same as crosscorr, but with zneg instead"""
     crosscorr(p, savename=savename, is_zpos=False)
+
+#-------------------
+def crosscorr_both(p, savename=''):
+    """Builds a crosscorrelation graph from the crosscorrelation of both zpos and zneg
+    Accepted input:
+    (<class 'Params'>)      will plot the crosscorrelation with the analog signal 
+    """
+    tmp = p.full_sim # Save temporary fullsim value
+    p.full_sim = False
+
+    _, _, rpos, rneg = calc_both_barycenters(p,mode='same')
+    p.full_sim = tmp # Restore entrance value
+
+    x = np.arange(len(rpos))
+    # Only plot the non-zero interval
+    _ , y0 = remove_zeropad(x,rpos, repad_ratio=0.05)
+    _ , y1 = remove_zeropad(x,rneg, repad_ratio=0.05)
+
+    x = np.arange(len(y0)) - int(math.floor(len(y0)/2))
+
+    continuous(x,y0, label='Leading')
+    plt.plot(x, y1, label='Trailing')
+
+    plt.xlabel('l')
+    plt.ylabel('|r[l]|')
+
+    plt.legend()
+
+    save(savename)
 
 
 #----------------
@@ -241,5 +275,3 @@ def pulse(p,savename=''):
 
 
 
-###################
-# Helper functions
