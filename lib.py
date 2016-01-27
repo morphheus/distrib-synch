@@ -33,7 +33,7 @@ def zadoff(u, N,oversampling=1,  q=0):
     """Returns a zadoff-chu sequence"""
 
     x = np.linspace(0, N-1, N*oversampling, dtype='float64')
-    return np.exp(1j*pi*u*x*(x+1+2*q)/N)
+    return np.exp(-1j*pi*u*x*(x+1+2*q)/N)
 
 
 
@@ -86,7 +86,6 @@ def calc_snr(ctrl,p):
 
 
 
-
 #------------
 def in_place_mov_avg(vector, wlims):
     """Runs an in-place moving average on the input vector."""
@@ -136,9 +135,6 @@ def in_place_mov_avg(vector, wlims):
 
 
 
-
-
-
 #---------
 def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, mode='valid', ma_window=1):
     """Outputs the barycenter location of 'f' in 'g'. g is expected to be the
@@ -171,7 +167,7 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, m
 
     # in-place MA filter on the cross correlation
     if ma_window % 2 == 0 or ma_window < 0:
-        raise Exception('Moving average window should be even and positive')
+        raise Exception('Moving average window should be odd and positive')
 
     if ma_window != 1:
         in_place_mov_avg( cross_correlation, np.array([math.floor(ma_window/2)]*2))
@@ -339,14 +335,14 @@ def build_timestamp_id():
 
 
 #------------------------
-def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False):
+def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False, disp=False):
     """Generates the barywidth map for a given range, given as a fraction of f_symb
     If the map already exists, it pulls it from the sql database instead"""
 
     """It also does a linear regression to the data"""
 
 
-    if not (scaling**-1/reach**-1).is_integer():
+    if not (reach/scaling).is_integer():
         warnings.warn("The ratio reach/scaling must be an integer")
 
 
@@ -381,6 +377,7 @@ def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False):
         p.add(order2fit=tmp[3])
         p.add(CFO_arr=tmp[4])
         p.init_basewidth = True
+        if disp: print('dBase ID: ' + str(db_output[0][0]))
         return CFO, tmp[2]
     elif db_output and force_calculate:
         db.del_row(db_output[0][0], conn=conn, tn=sql_table_name)
@@ -490,11 +487,17 @@ def cfo_mapper_order2(barywidth, p):
     poly[2] = p.basewidth - barywidth
     roots = np.real(np.roots(poly))
     
-    # Output the CFO matching the decreasing x-value of the curve
-    if poly[0] < 0:
+    # Output the CFO matching the good side of the curve:
+    if poly[0] > 0:
         return np.max(roots)
     else:
         return np.min(roots)
+
+    #desired_sign = 1 if p.baryslope > 1 else -1
+    #if desired_sign*poly[0] > 0:
+        #return np.max(roots)
+    #else:
+        #return np.min(roots)
     
 
 

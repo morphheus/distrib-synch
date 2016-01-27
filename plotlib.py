@@ -10,8 +10,23 @@ GRAPH_OUTPUT_FORMAT = 'eps'
 # Helper functions
 ###################
 
+def remove_zeropad(x,y,repad_ratio):
+    """Returns the truncated x and y arrays with the zero padding removed"""
+    if len(x) > len(y):
+        raise ValueError('Expected x and y to have same length')
+    
+    first, last = y.nonzero()[0][[0,-1]]
+
+    padding = int(round(repad_ratio*(last-first)))
+    lo = max(0, first - padding)
+    hi = min(len(y), last + padding)
+
+    outx = x[lo:(hi+1)]
+    outy = y[lo:(hi+1)]
+    return outx,outy
+
 #---------------------
-def discrete(*args):
+def discrete(*args, repad_ratio=0.1):
     """Plots a discrete graph with vertical bars"""
     if len(args) < 1 and len(args) > 2:
         raise Exception("Too many or too little inputs")
@@ -34,7 +49,7 @@ def discrete(*args):
 
 
 #---------------------
-def continuous(*args):
+def continuous(*args, repad_ratio=0.1):
     """Plots a continuous graph"""
     if len(args) < 1 and len(args) > 2:
         raise Exception("Too many or too little inputs")
@@ -44,6 +59,8 @@ def continuous(*args):
     else:
         y = args[0]
         x = np.arange(len(y))
+
+    
 
     fh = plt.figure()
     plt.plot(x, y, 'k-')
@@ -88,7 +105,6 @@ def hair(frames,param, y_label='Parameter', savename=''):
     plt.xlim([xmin,xmax])
     plt.xlabel('Frame')
     plt.ylabel(y_label)
-
 
     save(savename)
     return fh
@@ -145,20 +161,35 @@ def barywidth(*args, savename='', fit_type='linear', **kwargs):
 
 
 #----------------
-def crosscorr(p, savename=''):
-    """Builds a crosscorrelation graph.
+def crosscorr(p, savename='', is_zpos=True):
+    """Builds a crosscorrelation graph from the crosscorrelation with zpos (default)
     Accepted input:
     (<class 'Params'>)      will plot the crosscorrelation with the analog signal 
     """
     tmp = p.full_sim # Save temporary fullsim value
     p.full_sim = False
 
-    _, _, y, _ = calc_both_barycenters(p,mode='same')
+    _, _, rpos, rneg = calc_both_barycenters(p,mode='same')
     p.full_sim = tmp # Restore entrance value
-    x = np.arange(len(y))# - len(y)/2 + 0.5
 
-    discrete(x,y)
+    y = rpos if is_zpos else rneg
+
+    
+    x = np.arange(len(y))
+    # Only plot the non-zero interval
+    _ , y = remove_zeropad(x,y, repad_ratio=0.05)
+
+    x = np.arange(len(y)) - int(math.floor(len(y)/2))
+    continuous(x,y)
+    plt.xlabel('l')
+    plt.ylabel('|r[l]|')
+
     save(savename)
+
+#-------------------
+def crosscorr_zneg(p, savename=''):
+    """Same as crosscorr, but with zneg instead"""
+    crosscorr(p, savename=savename, is_zpos=False)
 
 
 #----------------
