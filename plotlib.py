@@ -105,7 +105,7 @@ def hair(frames,param, y_label='Parameter', savename=''):
     xmin = max([x[0] for x in frames])
     xmax = max([x[-1] for x in frames])
     plt.xlim([xmin,xmax])
-    plt.xlabel('Frame')
+    plt.xlabel('Sample')
     plt.ylabel(y_label)
 
     save(savename)
