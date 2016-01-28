@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
 import collections
 import bisect
 import math
@@ -16,8 +14,7 @@ from scipy.signal import fftconvolve
 import dumbsqlite3 as db
 from scipy.optimize import curve_fit
 
-warnings.simplefilter('default')
-
+#warnings.simplefilter('default')
 
 
 

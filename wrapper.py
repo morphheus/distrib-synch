@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 """Channel simulation wrapper, to be executed directly in a terminal"""
 
-from sim_channel import *
 import dumbsqlite3 as db
 import plotlib as graphs
+import os
+import lib
+
+from sim_channel import default_ctrl_dict, runsim
 
 
-
-
-
-p = Params()
+p = lib.Params()
 p.zc_len = 101
 p.plen = 31
 p.rolloff = 0.2
@@ -26,7 +26,7 @@ p.train_type = 'chain'
 p.update()
 
 
-steps = 200
+steps = 100
 controls = default_ctrl_dict()
 controls['frameunit'] = 4000
 controls['chansize'] = int(controls['frameunit']*steps)
@@ -40,7 +40,7 @@ controls['deltaf_bound'] = 3e-5
 controls['noise_std'] = 1
 controls['rand_init'] = True
 controls['max_echo_taps'] = 1
-controls['cfo_mapper_fct'] = cfo_mapper_order2
+controls['cfo_mapper_fct'] = lib.cfo_mapper_order2
 controls['bmap_reach'] = 3e-5
 controls['bmap_scaling'] = 3e-7
 controls['CFO_processing_avgtype'] = 'reg'
@@ -55,12 +55,14 @@ controls['max_CFO_correction'] = 3e-5 # As a factor of f_symb
 
 # Prepare the sync pulse
 print(len(p.analog_sig))
-print("SNR : " + str(calc_snr(controls,p)) + " dB")
-barywidth_map(p, reach=controls['bmap_reach'], scaling=controls['bmap_scaling'], force_calculate=False, disp=True)
+
+# User modules
+print("SNR : " + str(lib.calc_snr(controls,p)) + " dB")
+lib.barywidth_map(p, reach=controls['bmap_reach'], scaling=controls['bmap_scaling'], force_calculate=False, disp=True)
 
 # Run the simulation
-build_delay_matrix(controls, delay_fct = controls['delay_fct']);
-runsim(p, controls); controls['date'] = build_timestamp_id(); #db.add(controls)
+lib.build_delay_matrix(controls, delay_fct = controls['delay_fct']);
+runsim(p, controls); controls['date'] = lib.build_timestamp_id(); #db.add(controls)
 
 
 # Plot pretty graphs

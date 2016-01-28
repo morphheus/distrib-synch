@@ -1,6 +1,15 @@
 #!/usr/bin/env python
 
-from lib import *
+from lib import barywidth_map, calc_both_barycenters
+
+import math
+import warnings
+import numpy as np
+
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore",category=PendingDeprecationWarning)
+    import matplotlib
+    import matplotlib.pyplot as plt
 
 GRAPH_OUTPUT_LOCATION = 'graphs/' # don't forget the trailing slash
 GRAPH_OUTPUT_FORMAT = 'eps'
@@ -11,7 +20,7 @@ matplotlib.rcParams.update({'font.size': 14})
 ###################
 # Helper functions
 ###################
-
+#--------------------
 def remove_zeropad(x,y,repad_ratio):
     """Returns the truncated x and y arrays with the zero padding removed"""
     if len(x) > len(y):
@@ -140,7 +149,8 @@ def barywidth(*args, savename='', fit_type='linear', **kwargs):
 
     # Linear fit display
     if fit_type == 'linear':
-        fitleft = fit[0]*CFO[0]/f_symb + fit[1]; fitright= fit[0]*CFO[-1]/f_symb + fit[1]
+        fitleft = fit[0]*CFO[0]/f_symb + fit[1]
+        fitright= fit[0]*CFO[-1]/f_symb + fit[1]
         plt.plot((CFO[0]/args[0].f_symb, CFO[-1]/args[0].f_symb), (fitleft, fitright))
     elif fit_type == 'order2':
         # parabola fit display
@@ -190,6 +200,7 @@ def crosscorr(p, savename='', is_zpos=True):
 
     save(savename)
     return x, y, rpos, rneg
+
 
 #-------------------
 def crosscorr_zneg(p, savename=''):

@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 # My modules
-from lib import *
+
+# User modules
+import lib
+from lib import calc_both_barycenters, Params
 
 # Python modules
 import numpy as np
@@ -9,7 +12,6 @@ import collections
 import bisect
 import math # import ALL THE MATH
 import warnings
-
 
 from numpy import pi
 from pprint import pprint
@@ -42,9 +44,9 @@ def default_ctrl_dict():
     out['display'] = True
     out['keep_intermediate_values'] = False
     out['saveall'] = False # This options also saves all fields in Params to the control dict
-    out['cfo_mapper_fct'] = cfo_mapper_linear
+    out['cfo_mapper_fct'] = lib.cfo_mapper_linear
     out['cfo_bias'] = 0 # in terms of f_samp
-    out['delay_fct'] = delay_pdf_static
+    out['delay_fct'] = lib.delay_pdf_static
     out['deltaf_bound'] = 0.02 # in units of f_samp
     out['CFO_processing_avgtype'] = 'mov_avg' # 'mov_avg' or 'reg' (non-mov avg)
     out['CFO_processing_avgwindow'] = 5
@@ -122,7 +124,7 @@ def runsim(p,ctrl):
     queue_clk = []
     pulse_len = len(analog_pulse)
     offset = int((pulse_len-1)/2)
-    channels = cplx_gaussian( [clkcount,chansize],noise_std) 
+    channels = lib.cplx_gaussian( [clkcount,chansize],noise_std) 
     max_frame = chansize-offset-np.max(echo_delay);
     wait_til_adjust = np.zeros(clkcount, dtype='int64')
     wait_til_emit = np.zeros(clkcount, dtype='int64')
