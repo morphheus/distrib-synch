@@ -133,6 +133,52 @@ def in_place_mov_avg(vector, wlims):
 
 
 
+
+#------------
+def cumsum_mov_avg(vector, N):
+    """Runs an in-place moving average on the input vector. Uses cumulative sums, and may run into overflow issues
+    vector: input numpy array
+    N     : MA window length. Should be odd
+    """
+
+    if N%2 == 0:
+        raise ValueError('Moving average window should be an odd number')
+
+    left = math.ceil(N/2)
+    right = N-left
+    cumsum = np.cumsum(  np.append(  np.insert(vector, 0, np.zeros(left)),  np.zeros(right))  ) 
+    MA = (cumsum[N:] - cumsum[:-N])
+
+    # Appropriate division
+    MA[left-1:-right] /= N
+    for k in range(right):
+        MA[k] /= left+k
+        MA[-(k+1)] /= left+k
+
+    return MA
+
+
+#------------
+def convolve_mov_avg(vector,N):
+    """Computes the running mean of width N on the vector. Uses convolution"""
+    if N%2 == 0:
+        raise ValueError('Moving average window should be an odd number')
+
+    left = math.floor(N/2)
+    right = N-left-1
+
+    MA = np.convolve(vector, np.ones(N), mode='full')[left:-right]
+
+    # fix edges
+    MA[left:-right] /= N
+    for k in range(right):
+        tmpN = left+k+1
+        MA[k] /= tmpN
+        MA[-(k+1)] /= tmpN
+
+    return MA
+
+
 #---------
 def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, mode='valid', ma_window=1):
     """Outputs the barycenter location of 'f' in 'g'. g is expected to be the
@@ -168,7 +214,7 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, m
         raise Exception('Moving average window should be odd and positive')
 
     if ma_window != 1:
-        in_place_mov_avg( cross_correlation, np.array([math.floor(ma_window/2)]*2))
+        cross_correlation = convolve_mov_avg( cross_correlation, ma_window)
 
 
     
@@ -641,26 +687,26 @@ class Params(Struct):
     """Parameter struct containing all the parameters used for the simulation, from the generation of the modulated training sequence to the exponent of the cross-correlation"""
     #------------------------------------
     def __init__(self):
-        self.add(plen=101) # Note: must be odd
-        self.add(rolloff=0.1)
-        self.add(CFO=0)
-        self.add(TO=0)
-        self.add(trans_delay=0)
-        self.add(f_samp=1) # Sampling rate
-        self.add(f_symb=1) # Symbol frequency
-        self.add(zc_len=11) # Training sequence length
-        self.add(train_type='chain') # Overlap of ZC or sequence of ZC
-        self.add(repeat=1) # Number of ZC sequence repeats
-        self.add(spacing_factor=2) 
-        self.add(power_weight=10) 
-        self.add(full_sim=True)
-        self.add(pulse_type='raisedcosine')
-        self.add(init_update=False)
-        self.add(init_basewidth=False)
-        self.add(bias_removal=False)
-        self.add(crosscorr_fct='analog')
-        self.add(central_padding=0) # As a fraction of zpos length
-        self.add(ma_window=1)
+        self.plen = 101 # Note: must be odd
+        self.rolloff = 0.1
+        self.CFO = 0
+        self.TO = 0
+        self.trans_delay = 0
+        self.f_samp = 1 # Sampling rate
+        self.f_symb = 1 # Symbol frequency
+        self.zc_len = 11 # Training sequence length
+        self.train_type = 'chain' # Overlap of ZC or sequence of ZC
+        self.repeat = 1 # Number of ZC sequence repeats
+        self.spacing_factor = 2 
+        self.power_weight = 10 
+        self.full_sim = True
+        self.pulse_type = 'raisedcosine'
+        self.init_update = False
+        self.init_basewidth = False
+        self.bias_removal = False
+        self.crosscorr_fct = 'analog'
+        self.central_padding = 0 # As a fraction of zpos length
+        self.ma_window = 1
 
 
 
@@ -834,10 +880,6 @@ class Params(Struct):
 
 
 
-        #LEGACY
-        # width of each hill (units of frequencies)
-        #hill_width = 0.05/11*self.zc_len/51 * self.f_symb
-        #self.add(hill_width=hill_width)
 
 
 

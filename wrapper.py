@@ -5,8 +5,13 @@ import dumbsqlite3 as db
 import plotlib as graphs
 import os
 import lib
+import numpy as np
 
 from sim_channel import default_ctrl_dict, runsim
+
+
+#x = np.array([4]*15)
+#print(lib.convolve_mov_avg(x,5))
 
 
 p = lib.Params()
@@ -26,7 +31,7 @@ p.train_type = 'chain'
 p.update()
 
 
-steps = 100
+steps = 200
 controls = default_ctrl_dict()
 controls['frameunit'] = 4000
 controls['chansize'] = int(controls['frameunit']*steps)
@@ -36,19 +41,19 @@ controls['keep_intermediate_values'] = True
 controls['clkcount'] = 11
 controls['CFO_step_wait'] = 10
 #controls['cfo_bias'] = 0.0008 # in terms of f_symb
-controls['deltaf_bound'] = 3e-5
-controls['noise_std'] = 1
+controls['deltaf_bound'] = 3e-6
+controls['noise_std'] = 0.1
 controls['rand_init'] = True
 controls['max_echo_taps'] = 1
 controls['cfo_mapper_fct'] = lib.cfo_mapper_order2
-controls['bmap_reach'] = 3e-5
-controls['bmap_scaling'] = 3e-7
+controls['bmap_reach'] = 3e-6
+controls['bmap_scaling'] = 3e-8
 controls['CFO_processing_avgtype'] = 'reg'
 controls['CFO_processing_avgwindow'] = 6
 #controls['min_delay'] = 0.02 # in terms of frameunit
 #controls['delay_sigma'] = 0.001 # Standard deviation used for the generator delay function
 #controls['delay_fct'] = delay_pdf_exp
-controls['max_CFO_correction'] = 3e-5 # As a factor of f_symb
+controls['max_CFO_correction'] = 3e-6 # As a factor of f_symb
 
 #graphs.barywidth(p, fit_type='order2', reach=controls['bmap_reach'], scaling=controls['bmap_scaling'] ); graphs.show(); exit()
 

@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import lib
 import plotlib as graphs
 
