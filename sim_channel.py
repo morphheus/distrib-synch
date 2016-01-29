@@ -22,7 +22,7 @@ class SimControls(lib.Struct):
         """Default values"""
         self.nodecount = 7
         self.basephi = 1000
-        self.chansize = out['basephi']*50
+        self.chansize = self.basephi*50
         self.noise_std = 0
         self.phi_bounds = [1,1]
         self.self_emit = False # IF set to False, the self-emit will just be skipped.
@@ -102,43 +102,43 @@ def runsim(p,ctrl):
     # INPUTS
     #----------------
 
+    
+    # Put important ctrl values in local namespace ease of writing. These values shound not
+    # change under any circumstances
+    nodecount = ctrl.nodecount
+    basephi = ctrl.basephi
+    chansize = ctrl.chansize
+    noise_std = ctrl.noise_std
+    phi_bounds = ctrl.phi_bounds
+    self_emit = ctrl.self_emit
+    CFO_step_wait = ctrl.CFO_step_wait
+    epsilon_TO = ctrl.epsilon_TO
+    epsilon_CFO = ctrl.epsilon_CFO
+    cfo_mapper_fct = ctrl.cfo_mapper_fct
+    CFO_processing_avgtype = ctrl.CFO_processing_avgtype
+    CFO_processing_avgwindow = ctrl.CFO_processing_avgwindow
+
+    # IF echoes specified, to shove in array. OW, just don't worry about it
+    do_echoes = True
+    try:
+        echo_delay = ctrl.echo_delay
+        echo_amp = ctrl.echo_amp
+        max_echo_taps = ctrl.max_echo_taps
+    except KeyError:
+        max_echo_taps = 1
+        ctrl.max_taps = max_echo_taps
+        echo_delay = np.zeros((nodecount,nodecount,1), dtype='i8')
+        echo_amp = np.ones((nodecount,nodecount,1))
+        ctrl.echo_delay = echo_delay
+        ctrl.echo_amp = echo_amp
+    
+    analog_pulse = p.analog_sig
+
     # INPUT EXCEPTIONS
     if not p.init_update or not p.init_basewidth:
         raise AttributeError("Need to run p.update() and p.calc_base_barywidth before calling runsim()")
     if len(analog_pulse) > basephi:
         raise ValueError('Pulse is longer than a sample. Bad stuff will happen')
-    
-    # Put important ctrl values in local namespace ease of writing. These values shound not
-    # change under any circumstances
-    nodecount = ctrl['nodecount']
-    basephi = ctrl['basephi']
-    chansize = ctrl['chansize']
-    noise_std = ctrl['noise_std']
-    phi_bounds = ctrl['phi_bounds']
-    self_emit = ctrl['self_emit']
-    CFO_step_wait = ctrl['CFO_step_wait']
-    epsilon_TO = ctrl['epsilon_TO']
-    epsilon_CFO = ctrl['epsilon_CFO']
-    cfo_mapper_fct = ctrl['cfo_mapper_fct']
-    CFO_processing_avgtype = ctrl['CFO_processing_avgtype']
-    CFO_processing_avgwindow = ctrl['CFO_processing_avgwindow']
-
-    # IF echoes specified, to shove in array. OW, just don't worry about it
-    do_echoes = True
-    try:
-        echo_delay = ctrl['echo_delay']
-        echo_amp = ctrl['echo_amp']
-        max_echo_taps = ctrl['max_echo_taps']
-    except KeyError:
-        max_echo_taps = 1
-        ctrl['max_taps'] = max_echo_taps
-        echo_delay = np.zeros((nodecount,nodecount,1), dtype='i8')
-        echo_amp = np.ones((nodecount,nodecount,1))
-        ctrl['echo_delay'] = echo_delay
-        ctrl['echo_amp'] = echo_amp
-    
-    analog_pulse = p.analog_sig
-
 
 
     #----------------------
@@ -158,7 +158,7 @@ def runsim(p,ctrl):
     prev_adjustsample = np.zeros(nodecount, dtype='int64')
     emit = np.array([True]*nodecount)
 
-    if ctrl['keep_intermediate_values']:
+    if ctrl.keep_intermediate_values:
         sample_inter = [[] for k in range(nodecount)]
         theta_inter = [[] for k in range(nodecount)]
         phi_inter = [[] for k in range(nodecount)]
@@ -168,14 +168,14 @@ def runsim(p,ctrl):
     
     # Clock initial values
     phi_minmax = [round(x*basephi) for x in phi_bounds]
-    deltaf_minmax = np.array([-1*ctrl['deltaf_bound'],ctrl['deltaf_bound']])*p.f_symb
+    deltaf_minmax = np.array([-1*ctrl.deltaf_bound,ctrl.deltaf_bound])*p.f_symb
     do_CFO_correction = np.array([False]*nodecount)
     wait_CFO_correction = np.zeros(nodecount)
     CFO_maxjump_direction = np.ones(nodecount)
     CFO_corr_list = [[] for x in range(nodecount)]
     TO_corr_list = [[] for x in range(nodecount)]
 
-    if ctrl['rand_init']:
+    if ctrl.rand_init:
         phi = np.random.randint(phi_minmax[0],phi_minmax[1]+1, size=nodecount)
         theta = np.random.randint(basephi, size=nodecount)
         #theta = np.zeros(nodecount).astype(int) + int(round(basephi/2))
@@ -200,7 +200,7 @@ def runsim(p,ctrl):
         ordered_insert(sample+phi_minmax[1],clknum) # the + offset is to prevent accessing negative samples
 
     # Correction algorithms variables
-    max_CFO_correction = ctrl['max_CFO_correction']*p.f_symb
+    max_CFO_correction = ctrl.max_CFO_correction*p.f_symb
 
     # Release unused variables:
     del sample, clknum
@@ -211,11 +211,11 @@ def runsim(p,ctrl):
     # MAIN SIMULATION
     ####################
 
-    if ctrl['display']:
+    if ctrl.display:
         print('Theta std init: ' + str(np.std(theta)))
         print('deltaf std init: ' + str(np.std(deltaf)) + '    spread: '+ str(max(deltaf) -min(deltaf))+ '\n')
 
-    if ctrl['keep_intermediate_values']:
+    if ctrl.keep_intermediate_values:
         for k in range(nodecount):
             sample_inter[k].append(theta[k])
             theta_inter[k].append(theta[k])
@@ -332,7 +332,7 @@ def runsim(p,ctrl):
             #deltaf[curnode] += np.median(CFO_corr_list[curnode])
 
 
-            #CFO_correction += ctrl['cfo_bias']*p.f_symb
+            #CFO_correction += ctrl.cfo_bias*p.f_symb
             
             if wait_CFO_correction[curnode] <= CFO_step_wait:
                 wait_CFO_correction[curnode] += 1
@@ -355,7 +355,7 @@ def runsim(p,ctrl):
                 deltaf[curnode] += CFO_correction
 
             # -------------------
-            if ctrl['keep_intermediate_values']:
+            if ctrl.keep_intermediate_values:
                 sample_inter[curnode].append(cursample)
                 theta_inter[curnode].append(theta[curnode])
                 phi_inter[curnode].append(phi[curnode])
@@ -388,24 +388,27 @@ def runsim(p,ctrl):
 
 
 
-    if ctrl['display']:
+    if ctrl.display:
         print('theta STD: ' + str(np.std(theta)))
         print('deltaf STD: ' + str(np.std(deltaf)) + '    spread: ' + str(max(deltaf)-min(deltaf)))
 
 
     # Add all calculated values with the controls parameter structure
-    ctrl['theta'] = theta
-    ctrl['deltaf'] = deltaf
-    ctrl['phi'] = phi
+    ctrl.theta = theta
+    ctrl.deltaf = deltaf
+    ctrl.phi = phi
 
-    if ctrl['keep_intermediate_values']:
-        ctrl['sample_inter'] = sample_inter
-        ctrl['theta_inter'] = theta_inter
-        ctrl['deltaf_inter'] = deltaf_inter
-        ctrl['phi_inter'] = phi_inter
+    if ctrl.keep_intermediate_values:
+        ctrl.sample_inter = sample_inter
+        ctrl.theta_inter = theta_inter
+        ctrl.deltaf_inter = deltaf_inter
+        ctrl.phi_inter = phi_inter
 
-    if ctrl['saveall']:
-        ctrl.update(p.__dict__)
+    if ctrl.saveall:
+        #ctrl.update(p.__dict__)
+        warnings.warn('Not doing saveall to the ctrl struct')
+        pass
+
     
     
 

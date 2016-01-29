@@ -71,7 +71,7 @@ def cplx_gaussian(shape, noise_variance):
 #------------
 def calc_snr(ctrl,p):
     """Calculates the SNR of the system provided"""
-    noise_variance = np.float64(ctrl['noise_std']**2)
+    noise_variance = np.float64(ctrl.noise_std**2)
     signal_variance = np.float64(np.var(p.analog_sig))
 
     if not noise_variance == 0:
@@ -585,14 +585,14 @@ def delay_pd_gaussian():
 
 
 #------------------------
-def delay_pdf_static(controls):
+def delay_pdf_static(ctrl):
     """Simple exponentially decaying echoes"""
-    taps = controls['max_echo_taps']
+    taps = ctrl.max_echo_taps
 
    
-    delay_list = [x*controls['basephi']*0.1376732/(taps) for x in range(taps)]
+    delay_list = [x*ctrl.basephi*0.1376732/(taps) for x in range(taps)]
     delays = np.array([round(x) for x in delay_list], dtype=INT_DTYPE)
-    delays += int(controls['min_delay']*controls['basephi'])
+    delays += int(ctrl.min_delay*ctrl.basephi)
 
     amp_list = np.exp([-0.5*x for x in range(taps)])
 
@@ -604,17 +604,17 @@ def delay_pdf_static(controls):
 
 
 #-----------------------
-def delay_pdf_exp(controls):
+def delay_pdf_exp(ctrl):
     """Uniformly distributed delay with exponentially decaying amplitudes.
     If they delay is t, then the associated amplitude is:
     amp = exp(-t+t_0)"""
 
     
-    taps = controls['max_echo_taps']
-    t0 = controls['min_delay']
+    taps = ctrl.max_echo_taps
+    t0 = ctrl.min_delay
 
     # Delay list uniform distributed with width of sqrt(12)*\sigma + base delay
-    delay_list = [np.random.rand()*np.sqrt(12)*controls['delay_sigma'] +t0 for x in range(taps)]
+    delay_list = [np.random.rand()*np.sqrt(12)*ctrl.delay_sigma +t0 for x in range(taps)]
     delay_list.sort()
     
 
@@ -622,14 +622,14 @@ def delay_pdf_exp(controls):
 
 
     # Convert to numpy arrayz
-    delays = np.array([round(x*controls['basephi']) for x in delay_list], dtype=INT_DTYPE)
+    delays = np.array([round(x*ctrl.basephi) for x in delay_list], dtype=INT_DTYPE)
     amp = np.array(amp_list, dtype=CPLX_DTYPE)
     return delays, amp
 
 
 
 #------------------------
-def build_delay_matrix(controls, delay_fct=delay_pdf_exp):
+def build_delay_matrix(ctrl, delay_fct=delay_pdf_exp):
     """Insert documentation here"""
     # Note that PDF functions must be declared/imported BEFORE this function definition
 
@@ -637,10 +637,10 @@ def build_delay_matrix(controls, delay_fct=delay_pdf_exp):
     # echo_<name>[curnode][emitclk][k] = k'th echo between the two clocks. 
     
 
-    nodecount = controls['nodecount']
+    nodecount = ctrl.nodecount
     #nodecount = 1
     array_dtype_string = INT_DTYPE+','+CPLX_DTYPE
-    echoes = np.zeros((nodecount, nodecount, controls['max_echo_taps']), dtype=array_dtype_string)
+    echoes = np.zeros((nodecount, nodecount, ctrl.max_echo_taps), dtype=array_dtype_string)
     echoes.dtype.names = ('delay', 'amp')
 
 
@@ -648,13 +648,13 @@ def build_delay_matrix(controls, delay_fct=delay_pdf_exp):
         for l in range(nodecount):
             if k == l:
                 continue
-            echoes['delay'][k][l], echoes['amp'][k][l] = delay_fct(controls)
+            echoes['delay'][k][l], echoes['amp'][k][l] = delay_fct(ctrl)
 
 
-    # TODO: Pick input delay/amp from controls
+    # TODO: Pick input delay/amp from ctrl
     # TODO: don't use a structured array
-    controls['echo_delay'] = echoes['delay']
-    controls['echo_amp'] = echoes['amp']
+    ctrl.echo_delay = echoes['delay']
+    ctrl.echo_amp = echoes['amp']
 
 
 

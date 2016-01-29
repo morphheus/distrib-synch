@@ -7,7 +7,7 @@ import os
 import lib
 import numpy as np
 
-from sim_channel import default_ctrl_dict, runsim
+from sim_channel import default_ctrl_dict, runsim, SimControls
 
 
 #x = np.array([4]*15)
@@ -32,46 +32,48 @@ p.update()
 
 
 steps = 50
-controls = default_ctrl_dict()
-controls['basephi'] = 4000
-controls['chansize'] = int(controls['basephi']*steps)
-controls['display'] = True
-controls['saveall'] = True
-controls['keep_intermediate_values'] = True
-controls['nodecount'] = 5
-controls['CFO_step_wait'] = 10
-#controls['cfo_bias'] = 0.0008 # in terms of f_symb
-controls['deltaf_bound'] = 3e-6
-controls['noise_std'] = 0
-controls['rand_init'] = False
-controls['max_echo_taps'] = 1
-controls['cfo_mapper_fct'] = lib.cfo_mapper_order2
-controls['bmap_reach'] = 3e-6
-controls['bmap_scaling'] = 3e-8
-controls['CFO_processing_avgtype'] = 'reg'
-controls['CFO_processing_avgwindow'] = 6
-#controls['min_delay'] = 0.02 # in terms of basephi
-#controls['delay_sigma'] = 0.001 # Standard deviation used for the generator delay function
-#controls['delay_fct'] = delay_pdf_exp
-controls['max_CFO_correction'] = 3e-6 # As a factor of f_symb
+ctrl = default_ctrl_dict()
+ctrl = SimControls()
 
-#graphs.barywidth(p, fit_type='order2', reach=controls['bmap_reach'], scaling=controls['bmap_scaling'] ); graphs.show(); exit()
+ctrl.basephi = 4000
+ctrl.chansize = int(ctrl.basephi*steps)
+ctrl.display = True
+ctrl.saveall = True
+ctrl.keep_intermediate_values = True
+ctrl.nodecount = 5
+ctrl.CFO_step_wait = 10
+#ctrl.cfo_bias = 0.0008 # in terms of f_symb
+ctrl.deltaf_bound = 3e-6
+ctrl.noise_std = 0
+ctrl.rand_init = False
+ctrl.max_echo_taps = 1
+ctrl.cfo_mapper_fct = lib.cfo_mapper_order2
+ctrl.bmap_reach = 3e-6
+ctrl.bmap_scaling = 3e-8
+ctrl.CFO_processing_avgtype = 'reg'
+ctrl.CFO_processing_avgwindow = 6
+#ctrl.min_delay = 0.02 # in terms of basephi
+#ctrl.delay_sigma = 0.001 # Standard deviation used for the generator delay function
+#ctrl.delay_fct = delay_pdf_exp
+ctrl.max_CFO_correction = 3e-6 # As a factor of f_symb
+
+#graphs.barywidth(p, fit_type='order2', reach=ctrl.bmap_reach , scaling=ctrl.bmap_scaling ); graphs.show(); exit()
 
 
 # Prepare the sync pulse
 print(len(p.analog_sig))
 
-print("SNR : " + str(lib.calc_snr(controls,p)) + " dB")
-lib.barywidth_map(p, reach=controls['bmap_reach'], scaling=controls['bmap_scaling'], force_calculate=False, disp=True)
+print("SNR : " + str(lib.calc_snr(ctrl,p)) + " dB")
+lib.barywidth_map(p, reach=ctrl.bmap_reach , scaling=ctrl.bmap_scaling , force_calculate=False, disp=True)
 
 # Run the simulation
-lib.build_delay_matrix(controls, delay_fct = controls['delay_fct']);
-runsim(p, controls); controls['date'] = lib.build_timestamp_id(); #db.add(controls)
+lib.build_delay_matrix(ctrl, delay_fct = ctrl.delay_fct);
+runsim(p, ctrl); ctrl.date = lib.build_timestamp_id(); #db.add(ctrl)
 
 
 # Plot pretty graphs
-graphs.hair(controls['sample_inter'], controls['deltaf_inter'], y_label='CFO (\Delta\lambda)', savename='lastCFO'); graphs.show()
-graphs.hair(controls['sample_inter'], controls['theta_inter'], y_label='TO', savename='lastTO'); graphs.show()
+graphs.hair(ctrl.sample_inter , ctrl.deltaf_inter , y_label='CFO (\Delta\lambda)', savename='lastCFO'); graphs.show()
+graphs.hair(ctrl.sample_inter , ctrl.theta_inter , y_label='TO', savename='lastTO'); graphs.show()
 
 #graphs.barywidth(p, savename='short_barywidth', reach=0.05, scaling=0.0001)
 
