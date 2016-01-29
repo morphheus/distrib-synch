@@ -590,9 +590,9 @@ def delay_pdf_static(controls):
     taps = controls['max_echo_taps']
 
    
-    delay_list = [x*controls['frameunit']*0.1376732/(taps) for x in range(taps)]
+    delay_list = [x*controls['basephi']*0.1376732/(taps) for x in range(taps)]
     delays = np.array([round(x) for x in delay_list], dtype=INT_DTYPE)
-    delays += int(controls['min_delay']*controls['frameunit'])
+    delays += int(controls['min_delay']*controls['basephi'])
 
     amp_list = np.exp([-0.5*x for x in range(taps)])
 
@@ -622,7 +622,7 @@ def delay_pdf_exp(controls):
 
 
     # Convert to numpy arrayz
-    delays = np.array([round(x*controls['frameunit']) for x in delay_list], dtype=INT_DTYPE)
+    delays = np.array([round(x*controls['basephi']) for x in delay_list], dtype=INT_DTYPE)
     amp = np.array(amp_list, dtype=CPLX_DTYPE)
     return delays, amp
 
@@ -634,18 +634,18 @@ def build_delay_matrix(controls, delay_fct=delay_pdf_exp):
     # Note that PDF functions must be declared/imported BEFORE this function definition
 
     # ECHOES USAGE:
-    # echo_<name>[curclk][emitclk][k] = k'th echo between the two clocks. 
+    # echo_<name>[curnode][emitclk][k] = k'th echo between the two clocks. 
     
 
-    clkcount = controls['clkcount']
-    #clkcount = 1
+    nodecount = controls['nodecount']
+    #nodecount = 1
     array_dtype_string = INT_DTYPE+','+CPLX_DTYPE
-    echoes = np.zeros((clkcount, clkcount, controls['max_echo_taps']), dtype=array_dtype_string)
+    echoes = np.zeros((nodecount, nodecount, controls['max_echo_taps']), dtype=array_dtype_string)
     echoes.dtype.names = ('delay', 'amp')
 
 
-    for k in range(clkcount):
-        for l in range(clkcount):
+    for k in range(nodecount):
+        for l in range(nodecount):
             if k == l:
                 continue
             echoes['delay'][k][l], echoes['amp'][k][l] = delay_fct(controls)

@@ -102,17 +102,17 @@ def show():
 ###################
 
 #-------------------------
-def hair(frames,param, y_label='Parameter', savename=''):
+def hair(samples,param, y_label='Parameter', savename=''):
     """Plots an evolution graph of the parameter of"""
-    # Frames: frame_inter output from the simulation
+    # samples: sample_inter output from the simulation
     # Param:  <param>_inter output from the simulation
 
     fh = plt.figure()
-    for flist, plist in zip(frames,param):
+    for flist, plist in zip(samples,param):
         plt.plot(flist,plist, 'k-')
 
-    xmin = max([x[0] for x in frames])
-    xmax = max([x[-1] for x in frames])
+    xmin = max([x[0] for x in samples])
+    xmax = max([x[-1] for x in samples])
     plt.xlim([xmin,xmax])
     plt.xlabel('Sample')
     plt.ylabel(y_label)
