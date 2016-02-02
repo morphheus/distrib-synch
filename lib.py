@@ -61,9 +61,10 @@ def cplx_gaussian(shape, noise_variance):
     """The magnitude of the noise will have a variance of 'noise_variance'"""
     # If variance is equal to zero, numpy returns an error
     if noise_variance:
-        x = np.random.normal(size=shape, scale=noise_variance) + 1j*np.random.normal(size=shape, scale=noise_variance)
+        noise_variance /= 2**0.5 # Due to generating a cplx numbarr
+        x = (np.random.normal(size=shape, scale=noise_variance) + 1j*np.random.normal(size=shape, scale=noise_variance)).astype(CPLX_DTYPE)
     else:
-        x = np.array([0+0j]*shape[0]*shape[1]).reshape(shape[0],-1)
+        x = np.array([0+0j]*shape[0]*shape[1], dtype=CPLX_DTYPE).reshape(shape[0],-1)
     return x
 
 
