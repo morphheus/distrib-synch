@@ -51,9 +51,10 @@ def discrete(*args, repad_ratio=0.1):
     fh = plt.figure()
 
     plt.plot((x, x) , (y, np.zeros(len(y))), 'k-')
-    #plt.scatter(x, y, marker='.')
-    #plt.plot(indep_ax,curve,'k-')
-    x_lims = [min(x), max(x)]
+
+    # Pad the limits so we always see the leftmost-rightmost point
+    x_pad = (x[1]-x[0])
+    x_lims = [min(x)-x_pad, max(x)+x_pad]
     plt.plot(x_lims, [0,0], 'k-')
     plt.xlim(x_lims)
     return fh
@@ -122,66 +123,78 @@ def hair(samples,param, y_label='Parameter', savename=''):
 
 
 #---------------
-def barywidth(*args, savename='', fit_type='linear', **kwargs):
+def barywidth(*args, savename='', fit_type='linear', residuals=False, **kwargs):
     """Accepts either a Params() object or two iterables representing the CFO and the barywidth"""
 
 
     if len(args) == 1 and type(args[0]).__name__ == 'Params':
         CFO, barywidths = barywidth_map(args[0], **kwargs)
-        CFO = CFO
+        f_symb = args[0].f_symb
     elif len(args) == 2:
         CFO = args[0]
         barywidths = args[1]
+        f_symb = 1
+        fit_type = 'none'
     else:
         print("Invalid input")
 
-
+    x = CFO/f_symb
+    y = barywidths
     
-    fit = np.empty(2)
-    fit[0] = args[0].baryslope*args[0].f_symb
-    fit[1] = args[0].basewidth
+    fh = plt.figure()
+    main_axes_loc = [.13,.3,.8,.6] 
+    frame1 = fh.add_axes(main_axes_loc)
 
-    f_symb = args[0].f_symb
+    lh = plt.plot(x, y, 'k-', label='Barycenter width')
+    x_lims = [min(x), max(x)]
+    plt.plot((0,0), (min(y),max(y)))
 
-    
-    continuous(CFO/args[0].f_symb,barywidths)
-    plt.plot((0,0), (min(barywidths),max(barywidths)))
-
-    # Linear fit display
+    fit_curve = None
     if fit_type == 'linear':
-        fitleft = fit[0]*CFO[0]/f_symb + fit[1]
-        fitright= fit[0]*CFO[-1]/f_symb + fit[1]
-        plt.plot((CFO[0]/args[0].f_symb, CFO[-1]/args[0].f_symb), (fitleft, fitright))
+    # Linear fit display
+        fit = np.empty(2)
+        fit[0] = args[0].baryslope*f_symb
+        fit[1] = args[0].basewidth
+        fit_curve = fit[0]*x + fit[1]
+        plt.plot(x, fit_curve)
     elif fit_type == 'order2':
         # parabola fit display
         fit = args[0].order2fit
         fit_curve = fit[0]*CFO**2 + fit[1]*CFO**1 + args[0].basewidth#fit[2]
-        plt.plot(CFO/args[0].f_symb, fit_curve)
-    elif fit_type == 'step_sin':
-        pass
+        plt.plot(x, fit_curve)
     elif fit_type == 'none':
         pass
     else:
         print('Unknown fit option. No fit displayed')
     
 
-    plt.xlabel('CFO (f_symb)')
+    xlabel = 'CFO (f_symb)'
+    plt.xlabel(xlabel)
     plt.ylabel('Barycenter width')
+    plt.xlim(x_lims)
+
+    # Plotting residuals
+    if fit_curve is not None and residuals:
+        residuals_vals = fit_curve - barywidths
+        residuals_curve = residuals_vals/np.std(residuals_vals)
+        frame1.set_xticklabels([]) 
+
+        residuals_loc = [main_axes_loc[0],.1,.8,0]
+        residuals_loc[3] = main_axes_loc[1]-residuals_loc[1]-0.005
+        frame2 = fh.add_axes(residuals_loc) 
+        plt.plot((x[0],x[-1]),(0,0), 'k-')
+        plt.plot(x,residuals_curve)
+        frame2.yaxis.set_ticks((-1,1))
+        plt.ylabel('\sigma')
+        plt.xlabel(xlabel)
+        plt.xlim(x_lims)
     
 
     save(savename)
 
 
-#----------------
+#----------------------------
 def crosscorr(p, savename='', is_zpos=True):
-    """Builds a crosscorrelation graph from the crosscorrelation with zpos (default)
-    Accepted input:
-    (<class 'Params'>)      will plot the crosscorrelation with the analog signal 
-    """
-    tmp = p.full_sim # Save temporary fullsim value
-    p.full_sim = False
-
-    _, _, rpos, rneg = calc_both_barycenters(p,mode='same')
     p.full_sim = tmp # Restore entrance value
 
     y = rpos if is_zpos else rneg
@@ -274,12 +287,12 @@ def pulse(p,savename=''):
     
     y = np.real(p.pulse)
     x = np.arange(len(y)) - len(y)/2 + 0.5
-    x = x/p.f_samp
+
 
     discrete(x,y)
 
-    plt.xlabel('t')
-    plt.ylabel('p(t)')
+    plt.xlabel('n (samples)')
+    plt.ylabel('p[n])')
     
     save(savename)
     return x,y

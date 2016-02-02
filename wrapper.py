@@ -14,6 +14,9 @@ from sim_channel import default_ctrl_dict, runsim, SimControls
 #print(lib.convolve_mov_avg(x,5))
 
 
+
+
+
 p = lib.Params()
 p.zc_len = 101
 p.plen = 31
@@ -21,50 +24,55 @@ p.rolloff = 0.2
 p.f_samp = 4e6
 p.f_symb = 1e6
 p.repeat = 1
-p.spacing_factor = 2
+p.spacing_factor = 2 # CHANGE TO TWO!
 p.power_weight = 4
 p.full_sim = True
 p.bias_removal = True
-p.ma_window = 21 # number of samples i.e. after analog modulation
+p.ma_window = 1 # number of samples i.e. after analog modulation
 p.crosscorr_fct = 'analog'
 p.train_type = 'chain'
+p.central_padding = 0 # As a fraction of zpos length
 p.update()
 
 
-steps = 50
-ctrl = default_ctrl_dict()
-ctrl = SimControls()
+#graphs.pulse(p); graphs.show(); exit()
 
+ctrl = SimControls()
+ctrl.steps = 40
 ctrl.basephi = 4000
-ctrl.chansize = int(ctrl.basephi*steps)
 ctrl.display = True
 ctrl.saveall = True
 ctrl.keep_intermediate_values = True
-ctrl.nodecount = 5
+ctrl.nodecount = 3
 ctrl.CFO_step_wait = 10
+ctrl.theta_bounds = [0,1]
 #ctrl.cfo_bias = 0.0008 # in terms of f_symb
 ctrl.deltaf_bound = 3e-6
 ctrl.noise_std = 0
-ctrl.rand_init = False
+ctrl.rand_init = True
+ctrl.non_rand_seed = 112312341 # Only used if rand_init is False
 ctrl.max_echo_taps = 1
 ctrl.cfo_mapper_fct = lib.cfo_mapper_order2
-ctrl.bmap_reach = 3e-6
-ctrl.bmap_scaling = 3e-8
+ctrl.bmap_reach = 1e-6
+ctrl.bmap_scaling = 100
 ctrl.CFO_processing_avgtype = 'reg'
-ctrl.CFO_processing_avgwindow = 6
+ctrl.CFO_processing_avgwindow = 1
 #ctrl.min_delay = 0.02 # in terms of basephi
 #ctrl.delay_sigma = 0.001 # Standard deviation used for the generator delay function
 #ctrl.delay_fct = delay_pdf_exp
-ctrl.max_CFO_correction = 3e-6 # As a factor of f_symb
+ctrl.max_CFO_correction = 1e-6 # As a factor of f_symb
+ctrl.update()
 
-#graphs.barywidth(p, fit_type='order2', reach=ctrl.bmap_reach , scaling=ctrl.bmap_scaling ); graphs.show(); exit()
+#graphs.barywidth(p, fit_type='order2', reach=ctrl.bmap_reach , scaling_fct=ctrl.bmap_scaling, residuals=True ); graphs.show(); exit()
 
 
 # Prepare the sync pulse
 print(len(p.analog_sig))
 
+
+
 print("SNR : " + str(lib.calc_snr(ctrl,p)) + " dB")
-lib.barywidth_map(p, reach=ctrl.bmap_reach , scaling=ctrl.bmap_scaling , force_calculate=False, disp=True)
+lib.barywidth_map(p, reach=ctrl.bmap_reach , scaling_fct=ctrl.bmap_scaling , force_calculate=False, disp=True)
 
 # Run the simulation
 lib.build_delay_matrix(ctrl, delay_fct = ctrl.delay_fct);

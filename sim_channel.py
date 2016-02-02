@@ -20,11 +20,13 @@ class SimControls(lib.Struct):
     """Container object for the control parameters of the runsim() function"""
     def __init__(self):
         """Default values"""
+        self.steps = 30
         self.nodecount = 7
         self.basephi = 1000
         self.chansize = self.basephi*50
         self.noise_std = 0
         self.phi_bounds = [1,1]
+        self.theta_bounds = [0,1]
         self.self_emit = False # IF set to False, the self-emit will just be skipped.
         self.CFO_step_wait = 60
         self.rand_init = False
@@ -35,6 +37,9 @@ class SimControls(lib.Struct):
         self.cfo_bias = 0 # in terms of f_samp
         self.delay_fct = lib.delay_pdf_static
         self.deltaf_bound = 0.02 # in units of f_samp
+        self.bmap_reach = 3e-1
+        self.bmap_scaling = 100
+        self.non_rand_seed = 1231231
         # Echo controls
         self.max_echo_taps = 4
         self.min_delay = 0
@@ -44,6 +49,15 @@ class SimControls(lib.Struct):
         self.max_CFO_correction = 0.02 # As a factor of f_symb
         self.CFO_processing_avgtype = 'mov_avg' # 'mov_avg' or 'reg' (non-mov avg)
         self.CFO_processing_avgwindow = 5
+
+        self.init_update = True
+
+    def update(self):
+        """Must be run before runsim can be executed"""
+        self.chansize = int(self.basephi*self.steps)
+        self.phi_minmax = [round(x*self.basephi) for x in self.phi_bounds]
+        self.theta_minmax = [round(x*self.basephi) for x in self.theta_bounds]
+        self.init_update = True
 
 #-------------------------
 def ordered_insert(sample, clknum):
@@ -109,7 +123,6 @@ def runsim(p,ctrl):
     basephi = ctrl.basephi
     chansize = ctrl.chansize
     noise_std = ctrl.noise_std
-    phi_bounds = ctrl.phi_bounds
     self_emit = ctrl.self_emit
     CFO_step_wait = ctrl.CFO_step_wait
     epsilon_TO = ctrl.epsilon_TO
@@ -117,9 +130,10 @@ def runsim(p,ctrl):
     cfo_mapper_fct = ctrl.cfo_mapper_fct
     CFO_processing_avgtype = ctrl.CFO_processing_avgtype
     CFO_processing_avgwindow = ctrl.CFO_processing_avgwindow
+    phi_minmax = ctrl.phi_minmax
+    theta_minmax = ctrl.theta_minmax
 
     # IF echoes specified, to shove in array. OW, just don't worry about it
-    do_echoes = True
     try:
         echo_delay = ctrl.echo_delay
         echo_amp = ctrl.echo_amp
@@ -137,6 +151,8 @@ def runsim(p,ctrl):
     # INPUT EXCEPTIONS
     if not p.init_update or not p.init_basewidth:
         raise AttributeError("Need to run p.update() and p.calc_base_barywidth before calling runsim()")
+    if not ctrl.init_update:
+        raise AttributeError("Need to run ctrl.update() before calling runsim()")
     if len(analog_pulse) > basephi:
         raise ValueError('Pulse is longer than a sample. Bad stuff will happen')
 
@@ -151,7 +167,6 @@ def runsim(p,ctrl):
     queue_clk = []
     pulse_len = len(analog_pulse)
     offset = int((pulse_len-1)/2)
-    channels = lib.cplx_gaussian( [nodecount,chansize],noise_std) 
     max_sample = chansize-offset-np.max(echo_delay);
     wait_til_adjust = np.zeros(nodecount, dtype='int64')
     wait_til_emit = np.zeros(nodecount, dtype='int64')
@@ -166,8 +181,7 @@ def runsim(p,ctrl):
 
 
     
-    # Clock initial values
-    phi_minmax = [round(x*basephi) for x in phi_bounds]
+    # Node initial values
     deltaf_minmax = np.array([-1*ctrl.deltaf_bound,ctrl.deltaf_bound])*p.f_symb
     do_CFO_correction = np.array([False]*nodecount)
     wait_CFO_correction = np.zeros(nodecount)
@@ -175,25 +189,19 @@ def runsim(p,ctrl):
     CFO_corr_list = [[] for x in range(nodecount)]
     TO_corr_list = [[] for x in range(nodecount)]
 
-    if ctrl.rand_init:
-        phi = np.random.randint(phi_minmax[0],phi_minmax[1]+1, size=nodecount)
-        theta = np.random.randint(basephi, size=nodecount)
-        #theta = np.zeros(nodecount).astype(int) + int(round(basephi/2))
-        deltaf = np.random.uniform(deltaf_minmax[0],deltaf_minmax[1], size=nodecount)
-        clk_creation = np.random.randint(0,chansize, size=nodecount)
-
-    else:
-        phi = np.random.randint(phi_minmax[0],phi_minmax[1]+1, size=nodecount)
-        theta = np.round((np.arange(nodecount)/(2*(nodecount-1))+0.25) * basephi)
-        #theta = np.zeros(nodecount) + round(basephi/2)
-        theta = theta.astype(int)
-        #theta = np.zeros(nodecount).astype(int)
-        #deltaf = ((np.arange(nodecount)**2 - nodecount/2)/nodecount**2) * deltaf_minmax[1]
-        deltaf = (np.arange(nodecount)-nodecount/2)/nodecount * deltaf_minmax[1]
-        #deltaf = np.zeros(nodecount)
-        clk_creation = np.zeros(nodecount)
-
+    if not ctrl.rand_init:
+        np.random.seed(ctrl.non_rand_seed)
     
+    phi = np.random.randint(phi_minmax[0],phi_minmax[1]+1, size=nodecount)
+    theta = np.random.randint(theta_minmax[0],theta_minmax[1]+1, size=nodecount)
+    deltaf = np.random.uniform(deltaf_minmax[0],deltaf_minmax[1], size=nodecount)
+    clk_creation = np.random.randint(0,chansize, size=nodecount)
+    channels = lib.cplx_gaussian( [nodecount,chansize],noise_std) 
+
+    if not ctrl.rand_init:
+        np.random.seed()
+
+
 
     # First events happen on initial phase shift
     for clknum, sample in enumerate(theta):

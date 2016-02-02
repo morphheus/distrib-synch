@@ -18,6 +18,7 @@ from scipy.optimize import curve_fit
 
 
 
+FLOAT_DTYPE = 'float64'
 CPLX_DTYPE = 'complex128'
 INT_DTYPE = 'int64'
 
@@ -71,11 +72,12 @@ def cplx_gaussian(shape, noise_variance):
 #------------
 def calc_snr(ctrl,p):
     """Calculates the SNR of the system provided"""
-    noise_variance = np.float64(ctrl.noise_std**2)
-    signal_variance = np.float64(np.var(p.analog_sig))
+    noise_variance = np.float64(ctrl.noise_std)**2
+    signal_power = np.float64((np.sum(np.abs(p.analog_sig))+1)/len(p.analog_sig))**2
+
 
     if not noise_variance == 0:
-        snr = signal_variance/noise_variance
+        snr = signal_power/noise_variance
     else:
         snr = np.float64('inf')
 
@@ -379,15 +381,17 @@ def build_timestamp_id():
 
 
 #------------------------
-def barywidth_map(p, reach=0.05, scaling=0.001, force_calculate=False, disp=False):
+def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=False):
     """Generates the barywidth map for a given range, given as a fraction of f_symb
     If the map already exists, it pulls it from the sql database instead"""
 
     """It also does a linear regression to the data"""
 
 
-    if not (reach/scaling).is_integer():
-        warnings.warn("The ratio reach/scaling must be an integer")
+    if not float(scaling_fct).is_integer():
+        ValueError('Scaling must be an integer')
+
+    scaling = reach/scaling_fct
 
 
     dbase_file = 'barywidths.sqlite'
@@ -721,8 +725,8 @@ class Params(Struct):
 
         # A chain of ZC
         if self.train_type == 'chain':
-            zeros_count = round(self.zc_len*self.central_padding) + 1
-            if zeros_count % 2 == 0: zeros_count -= 1
+            zeros_count = round(self.zc_len*self.central_padding) +1
+            if zeros_count % 2 == 0 and zeros_count > 2: zeros_count -= 1
 
             training_seq = np.concatenate(tuple([zneg]*self.repeat+[np.zeros(zeros_count)]+[zpos]*self.repeat))
 
