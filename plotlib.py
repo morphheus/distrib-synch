@@ -123,12 +123,25 @@ def hair(samples,param, y_label='Parameter', savename=''):
     return fh
 
 
+#--------------------------
+def post_sim_graphs(ctrl, show_plots):
+    """Graphs to output at the end of a simulation"""
+    # CFO graph
+    hair(ctrl.sample_inter , ctrl.deltaf_inter , y_label='CFO (\Delta\lambda)', savename='lastCFO');
+    if show_plots:
+        show()
+
+    # TO graphs
+    hair(ctrl.sample_inter , ctrl.theta_inter , y_label='TO', savename='lastTO'); 
+    if show_plots:
+        show()
+
 #---------------
 def barywidth(*args, savename='', fit_type='linear', residuals=False, **kwargs):
-    """Accepts either a Params() object or two iterables representing the CFO and the barywidth"""
+    """Accepts either a SyncParams() object or two iterables representing the CFO and the barywidth"""
 
 
-    if len(args) == 1 and type(args[0]).__name__ == 'Params':
+    if len(args) == 1 and type(args[0]).__name__ == 'SyncParams':
         CFO, barywidths = barywidth_map(args[0], **kwargs)
         f_symb = args[0].f_symb
     elif len(args) == 2:
@@ -230,7 +243,7 @@ def crosscorr_zneg(p, savename=''):
 def crosscorr_both(p, savename=''):
     """Builds a crosscorrelation graph from the crosscorrelation of both zpos and zneg
     Accepted input:
-    (<class 'Params'>)      will plot the crosscorrelation with the analog signal 
+    (<class 'SyncParams'>)      will plot the crosscorrelation with the analog signal 
     """
     tmp = p.full_sim # Save temporary fullsim value
     p.full_sim = False

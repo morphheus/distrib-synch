@@ -11,7 +11,7 @@ OUTPUT_FOLDER = 'graphs/latex_figures/' # Don't forget the trailing slash
 #------------------------------
 def discrete0_pinit():
     """Discrete non pulse-shaped sequence"""
-    p = lib.Params()
+    p = lib.SyncParams()
     p.zc_len = 101
     p.plen = 1
     p.rolloff = 0.2

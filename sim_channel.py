@@ -2,7 +2,7 @@
 
 # User modules
 import lib
-from lib import calc_both_barycenters, Params
+from lib import calc_both_barycenters, SyncParams
 
 # Python modules
 import numpy as np
@@ -32,7 +32,7 @@ class SimControls(lib.Struct):
         self.rand_init = False
         self.display = True # Display progress of runsim
         self.keep_intermediate_values = False
-        self.saveall = False # This options also saves all fields in Params to the control dict
+        self.saveall = False # This options also saves all fields in SyncParams to the control dict
         self.cfo_mapper_fct = lib.cfo_mapper_linear
         self.cfo_bias = 0 # in terms of f_samp
         self.delay_fct = lib.delay_pdf_static
@@ -57,6 +57,7 @@ class SimControls(lib.Struct):
         self.chansize = int(self.basephi*self.steps)
         self.phi_minmax = [round(x*self.basephi) for x in self.phi_bounds]
         self.theta_minmax = [round(x*self.basephi) for x in self.theta_bounds]
+        lib.build_delay_matrix(self, delay_fct=self.delay_fct);
         self.init_update = True
 
 #-------------------------
@@ -82,7 +83,7 @@ def default_ctrl_dict():
     out['rand_init'] = False
     out['display'] = True
     out['keep_intermediate_values'] = False
-    out['saveall'] = False # This options also saves all fields in Params to the control dict
+    out['saveall'] = False # This options also saves all fields in SyncParams to the control dict
     out['cfo_mapper_fct'] = lib.cfo_mapper_linear
     out['cfo_bias'] = 0 # in terms of f_samp
     out['delay_fct'] = lib.delay_pdf_static
@@ -111,12 +112,11 @@ def default_ctrl_dict():
 def runsim(p,ctrl):
     """Executes a simulation with the signal parameters p and controls parameters ctrl"""
 
+    # Prep
 
     #----------------
     # INPUTS
     #----------------
-
-    
     # Put important ctrl values in local namespace ease of writing. These values shound not
     # change under any circumstances
     nodecount = ctrl.nodecount
@@ -416,10 +416,6 @@ def runsim(p,ctrl):
         #ctrl.update(p.__dict__)
         warnings.warn('Not doing saveall to the ctrl struct')
         pass
-
-    
-    
-
 
 
     """

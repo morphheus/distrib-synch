@@ -682,7 +682,7 @@ class Struct:
 
 
 #--------------
-class Params(Struct):
+class SyncParams(Struct):
     """Parameter struct containing all the parameters used for the simulation, from the generation of the modulated training sequence to the exponent of the cross-correlation"""
     #------------------------------------
     def __init__(self):
@@ -741,7 +741,7 @@ class Params(Struct):
         """Calculates the barycenter width of the given parameters"""
         """ASSUMPTION: spacing_factor = 2"""
         if not self.init_update:
-            raise AttributeError("Must execute p.update() before passing the Params class to this function")
+            raise AttributeError("Must execute p.update() before passing the SyncParams class to this function")
         if self.CFO != 0:
             warnings.warn("calc_base_barywidth() was called with non-zero CFO in argument parameters")
 
