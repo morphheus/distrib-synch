@@ -16,6 +16,7 @@ from numpy import pi
 from pprint import pprint
 
 
+#----------------------------------
 class SimControls(lib.Struct):
     """Container object for the control parameters of the runsim() function"""
     def __init__(self):
@@ -59,6 +60,7 @@ class SimControls(lib.Struct):
         self.theta_minmax = [round(x*self.basephi) for x in self.theta_bounds]
         lib.build_delay_matrix(self, delay_fct=self.delay_fct);
         self.init_update = True
+
 
 #-------------------------
 def ordered_insert(sample, clknum):

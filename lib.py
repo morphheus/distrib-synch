@@ -22,10 +22,6 @@ FLOAT_DTYPE = 'float64'
 CPLX_DTYPE = 'complex128'
 INT_DTYPE = 'int64'
 
-########################
-# SUBROUTINES
-#######################
-
 
 #---------
 def zadoff(u, N,oversampling=1,  q=0):
@@ -33,8 +29,6 @@ def zadoff(u, N,oversampling=1,  q=0):
 
     x = np.linspace(0, N-1, N*oversampling, dtype='float64')
     return np.exp(-1j*pi*u*x*(x+1+2*q)/N)
-
-
 
 
 #---------------------
@@ -51,14 +45,11 @@ def cosine_zadoff_overlap(u, N,oversampling=1,  q=0):
     return np.cos(pi*u*x*(x+1+2*q)/N)
 
 
-
-
 #---------------------
 def step_sin(x, a, b, h, k):
     """ x + sin(x), with the 4 canonical parameters"""
     xval = b*(x-h)
     return a*(xval+np.sin(xval)) + k
-
 
 
 #---------
@@ -75,8 +66,6 @@ def cplx_gaussian(shape, noise_variance):
     return x
 
 
-
-
 #------------
 def calc_snr(ctrl,p):
     """Calculates the SNR of the system provided"""
@@ -91,7 +80,6 @@ def calc_snr(ctrl,p):
 
     snr_db = 10*np.log10(snr)
     return(snr_db)
-
 
 
 #------------
@@ -140,8 +128,6 @@ def in_place_mov_avg(vector, wlims):
     # empty the deque
     for k in range(lb):
         vector[vlen-lb+k] = tmp.popleft()
-
-
 
 
 #------------
@@ -247,9 +233,6 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, m
     return barycenter, cross_correlation
 
 
-
-
-
 #------------------
 def d_to_a(values, pulse, spacing,dtype=CPLX_DTYPE):
     """outputs an array with modulated pulses"""
@@ -262,8 +245,6 @@ def d_to_a(values, pulse, spacing,dtype=CPLX_DTYPE):
         idx += spacing
 
     return output
-
-
 
 
 #---------------------------
@@ -303,19 +284,7 @@ def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
     warnings.filterwarnings("always")
     return time,h
 
-
-
-
-
-
-
-
-
-
-
-
-
-   
+  
 # -------------------
 def calc_both_barycenters(p, *args,mode='valid'):
     """Wrapper that calculates the barycenter on the specified channel. If no channel specified,
@@ -344,10 +313,6 @@ def calc_both_barycenters(p, *args,mode='valid'):
     return barypos, baryneg, crosscorrpos, crosscorrneg
 
 
-
-
-
-
 #------------------------
 def build_timestamp_id():
     """Builds a timestamp, and appens a random 3 digit number after it"""
@@ -358,7 +323,6 @@ def build_timestamp_id():
     tstr = [str(getattr(tempo,x)).zfill(2) for x in vals]
 
     return int(''.join(tstr) + str(np.random.randint(999)).zfill(3))
-
 
 
 #------------------------
@@ -516,13 +480,11 @@ def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=Fa
     return CFO, barywidths
 
 
-
-
-
 #-------------------------
 def cfo_mapper_linear(barywidth, p):
     tmp = (barywidth - p.basewidth) / (p.baryslope)
     return tmp
+
 
 #-------------------------
 def cfo_mapper_order2(barywidth, p):
@@ -535,14 +497,6 @@ def cfo_mapper_order2(barywidth, p):
         return np.max(roots)
     else:
         return np.min(roots)
-
-    #desired_sign = 1 if p.baryslope > 1 else -1
-    #if desired_sign*poly[0] > 0:
-        #return np.max(roots)
-    #else:
-        #return np.min(roots)
-    
-
 
 
 #-------------------------
@@ -600,8 +554,6 @@ def delay_pdf_static(ctrl):
     return delays, amp
 
 
-
-
 #-----------------------
 def delay_pdf_exp(ctrl):
     """Uniformly distributed delay with exponentially decaying amplitudes.
@@ -624,7 +576,6 @@ def delay_pdf_exp(ctrl):
     delays = np.array([round(x*ctrl.basephi) for x in delay_list], dtype=INT_DTYPE)
     amp = np.array(amp_list, dtype=CPLX_DTYPE)
     return delays, amp
-
 
 
 #------------------------
@@ -656,10 +607,6 @@ def build_delay_matrix(ctrl, delay_fct=delay_pdf_exp):
     ctrl.echo_amp = echoes['amp']
 
 
-
-
-
-
 ##########################
 # CLASSDEFS
 #########################
@@ -684,6 +631,7 @@ class Struct:
 #--------------
 class SyncParams(Struct):
     """Parameter struct containing all the parameters used for the simulation, from the generation of the modulated training sequence to the exponent of the cross-correlation"""
+
     #------------------------------------
     def __init__(self):
         self.plen = 101 # Note: must be odd
@@ -708,9 +656,6 @@ class SyncParams(Struct):
         self.ma_window = 1
 
 
-
-
-
     #------------------------------------
     def build_training_sequence(self):
         """Builds training sequence from current parameters"""
@@ -728,9 +673,15 @@ class SyncParams(Struct):
         # A perfect overlap of ZC (essentially cos(x^2)
         elif self.train_type == 'overlap':
             training_seq = cosine_zadoff_overlap(1, self.zc_len)
+
+        # A single ZC
+        elif self.train_type == 'single':
+            training_seq = zpos.copy()
+
         # Wrong train_type
         else:
             raise ValueError('Invalid training sequence type: ' + str(self.train_type))
+
 
         self.add(zpos=zpos)
         self.add(training_seq=training_seq)
@@ -778,7 +729,6 @@ class SyncParams(Struct):
         self.init_basewidth = True
 
 
-
     #------------------------------------
     def build_pulse(self):
         """Builds pulse from current parameters"""
@@ -791,11 +741,9 @@ class SyncParams(Struct):
         self.add(pulse=pulse)
 
 
-    
-
     #------------------------------------
     def build_analog_sig(self):
-        """Must run build_pulse and build_training_sequence first"""
+        """Pulses-shapes the training sequence. Must run build_pulse and build_training_sequence first"""
         T = 1/self.f_samp
         analog_sig = d_to_a(self.training_seq, self.pulse, self.spacing)
         analog_zpos = d_to_a(self.zpos, self.pulse, self.spacing)
@@ -805,8 +753,8 @@ class SyncParams(Struct):
         if not self.full_sim:
             zerocount = round(len(analog_sig))*2
             analog_sig = np.concatenate((np.zeros(zerocount- self.TO- self.trans_delay), \
-                                     analog_sig, \
-                                     np.zeros(zerocount + self.TO + self.trans_delay)))
+                                        analog_sig, \
+                                        np.zeros(zerocount + self.TO + self.trans_delay)))
         
             time_arr = (np.arange(len(analog_sig))+np.random.rand()*1000*len(analog_sig))*T
             CFO_arr = np.exp( 2*pi*1j*self.CFO*(time_arr - self.trans_delay))
@@ -825,7 +773,6 @@ class SyncParams(Struct):
         self.add(analog_sig=analog_sig)
         self.add(analog_zpos=analog_zpos)
         self.add(analog_zneg=analog_zneg)
-
 
 
     #------------------------------------
@@ -874,7 +821,7 @@ class SyncParams(Struct):
 
 
 
-        # Build analog sig and finish:
+        # Done updating
         self.init_update = True
 
 
