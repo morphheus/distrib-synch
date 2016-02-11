@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from lib import barywidth_map, calc_both_barycenters
+import lib
 
 import math
 import warnings
@@ -156,12 +157,16 @@ def barywidth(*args, savename='', fit_type='linear', residuals=False, **kwargs):
         fit[0] = args[0].baryslope*f_symb
         fit[1] = args[0].basewidth
         fit_curve = fit[0]*x + fit[1]
-        plt.plot(x, fit_curve)
+        plt.plot(x, fit_curve, label='Linear fit')
     elif fit_type == 'order2':
         # parabola fit display
         fit = args[0].order2fit
         fit_curve = fit[0]*CFO**2 + fit[1]*CFO**1 + args[0].basewidth#fit[2]
-        plt.plot(x, fit_curve)
+        plt.plot(x, fit_curve, label='Order2 fit')
+    elif fit_type == 'logistic':
+        coeffs = args[0].logisticfit
+        fit_curve = lib.logistic(CFO, coeffs) + args[0].basewidth
+        plt.plot(x, fit_curve, label='Logistic fit')
     elif fit_type == 'none':
         pass
     else:
@@ -172,6 +177,7 @@ def barywidth(*args, savename='', fit_type='linear', residuals=False, **kwargs):
     plt.xlabel(xlabel)
     plt.ylabel('Barycenter width')
     plt.xlim(x_lims)
+    plt.legend()
 
     # Plotting residuals
     if fit_curve is not None and residuals:

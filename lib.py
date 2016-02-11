@@ -12,7 +12,7 @@ from pprint import pprint
 from scipy.signal import fftconvolve
 
 import dumbsqlite3 as db
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, leastsq
 
 #warnings.simplefilter('default')
 
@@ -36,7 +36,14 @@ def zadoff(u, N,oversampling=1,  q=0):
 
 
 
-########################
+
+#---------------------
+def logistic(x, coeffs):
+    """Logistic function with y-intercept always  0"""
+    return (1/(1+np.exp(coeffs[1]*x))-0.5)*coeffs[0] + coeffs[2]*x
+
+
+#---------------------
 def cosine_zadoff_overlap(u, N,oversampling=1,  q=0):
     """Returns a cos(un^2) sequence"""
 
@@ -302,33 +309,6 @@ def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
 
 
 
-# PENDING DELETION
-#--------------------
-def test_crosscorr(p):
-    """This function builds the sampled analog signal from the appropriate components. It then finds the two barycenters on said built signal"""
-
-    if not p.init_update:
-        raise AttributeError("Must execute p.update() before passing the Params class to this function")
-
-    
-    # Taking the cross-correlation and printing the adjusted barycenter
-    barypos, crosscorrpos =barycenter_correlation(p.pad_zpos,p.analog_sig, power_weight=p.power_weight) 
-    baryneg, crosscorrneg =barycenter_correlation(p.pad_zneg,p.analog_sig, power_weight=p.power_weight) 
-
-    baryoffset = 0#len(crosscorrneg)/2 + 0.5
-
-
-    # Place all return arrays in one struct for simplicity
-    output = Struct()
-    output.add(barypos=barypos-baryoffset)
-    output.add(baryneg=baryneg-baryoffset)
-
-    if not p.full_sim:
-        output.add(crosscorrpos=crosscorrpos)
-        output.add(crosscorrneg=crosscorrneg)
-
-    return output
-    
 
 
 
@@ -418,13 +398,14 @@ def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=Fa
     
     # Fetch data if possible/allowed. If data exist but must recalc, delete existing.
     if db_output and not force_calculate:
-        tmp = db.fetch_cols(db_output[0][0], ['baryslope', 'basewidth', 'barywidth_arr', 'order2fit', 'CFO_arr'], conn=conn, tn=sql_table_name)
+        tmp = db.fetch_cols(db_output[0][0], ['baryslope', 'basewidth', 'barywidth_arr', 'order2fit', 'CFO_arr', 'logisticfit'], conn=conn, tn=sql_table_name)
         conn.close()
         p.add(baryslope=tmp[0])
         p.add(basewidth=tmp[1])
         p.add(barywidth_arr=tmp[2])
         p.add(order2fit=tmp[3])
         p.add(CFO_arr=tmp[4])
+        #p.add(logisticfit=tmp[5])
         p.init_basewidth = True
         if disp: print('dBase ID: ' + str(db_output[0][0]))
         return CFO, tmp[2]
@@ -484,15 +465,27 @@ def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=Fa
     print('Executing data fits...')
     p.init_basewidth = True
     basewidth = barywidths[index_zero]
+    barywidths -= basewidth # Remove the basewidth to ease the fitting
     p.add(basewidth=basewidth)
 
+    
+    linear_erf = lambda coeffs, x, y: -1*y + coeffs[0]*x
+    order2_erf = lambda coeffs, x, y: -1*y + coeffs[0]*x**2 + coeffs[1]*x
+    logistic_erf = lambda coeffs, x, y: -1*y + logistic(x,coeffs)
+
     # Linear fit
-    fit = np.polyfit(CFO, barywidths, 1)
-    p.add(baryslope=fit[0])
+    #fit = np.polyfit(CFO, barywidths, 1)
+    fit = leastsq(linear_erf, [0], args=(CFO, barywidths))
+    p.add(baryslope=fit[0][0])
 
     # 2nd degree fit
+    fit,_ = leastsq(order2_erf, [0,0], args=(CFO, barywidths))
     fit = np.polyfit(CFO, barywidths, 2)
     p.add(order2fit=fit)
+
+    # Logistic
+    fit,_ = leastsq(logistic_erf, [1,-1,p.baryslope], args=(CFO, barywidths))
+    p.add(logisticfit=fit)
 
     # x + sin(x) fit
     # find the initial frequency (b). The while loop spits out the index of the first half period
@@ -508,6 +501,7 @@ def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=Fa
     
 
     # Save all values used to generate the map into the database for caching
+    barywidths += basewidth # Put back the original data
     values_to_save = {key:p.__dict__[key] for key in p.__dict__.keys() if key not in save_skiplist}
     values_to_save['reach'] = reach
     values_to_save['scaling'] = scaling

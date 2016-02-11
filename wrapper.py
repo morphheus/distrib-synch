@@ -53,7 +53,7 @@ ctrl.rand_init = True
 ctrl.non_rand_seed = 112312341 # Only used if rand_init is False
 ctrl.max_echo_taps = 1
 ctrl.cfo_mapper_fct = lib.cfo_mapper_order2
-ctrl.bmap_reach = 1e-6
+ctrl.bmap_reach = 3e-6
 ctrl.bmap_scaling = 100
 ctrl.CFO_processing_avgtype = 'reg'
 ctrl.CFO_processing_avgwindow = 1
@@ -63,7 +63,7 @@ ctrl.CFO_processing_avgwindow = 1
 ctrl.max_CFO_correction = 1e-6 # As a factor of f_symb
 ctrl.update()
 
-#graphs.barywidth(p, fit_type='order2', reach=ctrl.bmap_reach , scaling_fct=ctrl.bmap_scaling, residuals=True ); graphs.show(); exit()
+graphs.barywidth(p, fit_type='logistic', reach=ctrl.bmap_reach , scaling_fct=ctrl.bmap_scaling, residuals=True, force_calculate=True ); graphs.show(); exit()
 
 
 # Prepare the sync pulse
@@ -97,6 +97,8 @@ graphs.hair(ctrl.sample_inter , ctrl.theta_inter , y_label='TO', savename='lastT
 # TODO:
 # Barywidth: base barywidth with a line fitting instead of dumb values
 # CFO correction: put in a max values
+
+
 
 
 
