@@ -10,12 +10,10 @@ import numpy as np
 from sim_channel import default_ctrl_dict, runsim, SimControls
 
 
-#x = np.array([4]*15)
-#print(lib.convolve_mov_avg(x,5))
 
 
 #-------------------------
-def wrap1():
+def dec_wrap1():
     """Chained ZC sequences"""
     p = lib.SyncParams()
     p.zc_len = 101
@@ -31,6 +29,7 @@ def wrap1():
     p.ma_window = 1 # number of samples i.e. after analog modulation
     p.crosscorr_fct = 'analog'
     p.train_type = 'chain'
+    p.pulse_type = 'raisedcosine'
     p.central_padding = 0 # As a fraction of zpos length
     p.update()
 
@@ -50,7 +49,7 @@ def wrap1():
     ctrl.non_rand_seed = 112312341 # Only used if rand_init is False
     ctrl.max_echo_taps = 1
     ctrl.cfo_mapper_fct = lib.cfo_mapper_order2
-    ctrl.bmap_reach = 3e-6
+    ctrl.bmap_reach = 1e-6
     ctrl.bmap_scaling = 100
     ctrl.CFO_processing_avgtype = 'reg'
     ctrl.CFO_processing_avgwindow = 1
@@ -65,53 +64,87 @@ def wrap1():
 
 
 #-------------------------
-def wrap2():
+def dec_wrap2():
     """Single ZC sequence with Decimation"""
     p = lib.SyncParams()
     p.zc_len = 101
-    p.plen = 31
+    p.plen = 51
+
     p.rolloff = 0.2
     p.f_samp = 4e6
     p.f_symb = 1e6
     p.repeat = 1
     p.spacing_factor = 2 # CHANGE TO TWO!
+
     p.power_weight = 4
     p.full_sim = True
     p.bias_removal = True
-    p.ma_window = 1 # number of samples i.e. after analog modulation
-    p.crosscorr_fct = 'analog'
-    p.train_type = 'chain'
+    p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
+    p.train_type = 'singledecimate' # Type of training sequence
+    p.crosscorr_fct = 'analog' # Only important when not using 'singledecimate' train type
+    #p.pulse_type = 'raisedcosine'
+    p.pulse_type = 'rootraisedcosine'
     p.central_padding = 0 # As a fraction of zpos length
     p.update()
 
+
     ctrl = SimControls()
-    ctrl.steps = 40
-    ctrl.basephi = 4000
-    ctrl.display = True
-    ctrl.saveall = True
-    ctrl.keep_intermediate_values = True
-    ctrl.nodecount = 3
-    ctrl.CFO_step_wait = 10
-    ctrl.theta_bounds = [0,1]
-    #ctrl.cfo_bias = 0.0008 # in terms of f_symb
+    ctrl.steps = 40 # Approx number of emissions per node
+    ctrl.basephi = 4000 # How many samples between emission
+    ctrl.display = True # Show stuff in the console
+    ctrl.keep_intermediate_values = True # Needed to draw graphs
+    ctrl.nodecount = 20 # Number of nodes
+    ctrl.CFO_step_wait = float('inf') # Use float('inf') to never corrrect for CFO
+
+    ctrl.theta_bounds = [0,1] # In units of phi
     ctrl.deltaf_bound = 3e-6
-    ctrl.noise_std = 0
+    ctrl.noise_std = 0.1
     ctrl.rand_init = True
     ctrl.non_rand_seed = 112312341 # Only used if rand_init is False
-    ctrl.max_echo_taps = 1
-    ctrl.cfo_mapper_fct = lib.cfo_mapper_order2
+    ctrl.max_echo_taps = 1 
+
     ctrl.bmap_reach = 3e-6
     ctrl.bmap_scaling = 100
+
+    ctrl.cfo_mapper_fct = lib.cfo_mapper_pass
     ctrl.CFO_processing_avgtype = 'reg'
     ctrl.CFO_processing_avgwindow = 1
+    ctrl.max_CFO_correction = 1e-6 # As a factor of f_symb
     #ctrl.min_delay = 0.02 # in terms of basephi
     #ctrl.delay_sigma = 0.001 # Standard deviation used for the generator delay function
     #ctrl.delay_fct = delay_pdf_exp
-    ctrl.max_CFO_correction = 1e-6 # As a factor of f_symb
+
+    ctrl.saveall = True
+
     ctrl.update()
 
     return p, ctrl
 
+
+
+#------------------------
+def main_thesis(p,ctrl):
+    graphs.barywidth(p, fit_type='linear', reach=ctrl.bmap_reach , scaling_fct=ctrl.bmap_scaling, residuals=True, force_calculate=False ); graphs.show(); exit()
+
+    print("SNR : " + str(lib.calc_snr(ctrl,p)) + " dB")
+
+    sim_object = SimWrap(p, ctrl)
+    sim_object.show_plots = True
+    sim_object.simulate()
+
+
+
+#------------------------
+def main_interd(p,ctrl):
+    #graphs.crosscorr(p); graphs.show(); exit()
+    #graphs.analog(p); graphs.show(); exit()
+    #graphs.pulse(p); graphs.show(); exit()
+    #graphs.crosscorr(p); graphs.show(); exit()
+
+    sim_object = SimWrap(p, ctrl)
+    sim_object.show_CFO = False
+    sim_object.simulate()
+    
 
 
 
@@ -122,7 +155,8 @@ class SimWrap(lib.Struct):
 
     force_calculate = False # Forces the update of all values before starting the simulation
     make_plots = True
-    show_plots = False
+    show_CFO = True
+    show_TO = True
 
     def __init__(self, p, ctrl):
         self.add(p=p)
@@ -143,28 +177,17 @@ class SimWrap(lib.Struct):
         
         # Plot pretty graphs
         if self.make_plots:
-            graphs.post_sim_graphs(ctrl, show_plots=self.show_plots)
+            graphs.post_sim_graphs(self)
 
 
 
 ############
 # MAIN
 ############
-p, ctrl = wrap1()
+p, ctrl = dec_wrap2()
 
-#graphs.barywidth(p, fit_type='logistic', reach=ctrl.bmap_reach , scaling_fct=ctrl.bmap_scaling, residuals=True, force_calculate=False ); graphs.show(); exit()
-
-print("SNR : " + str(lib.calc_snr(ctrl,p)) + " dB")
-
-sim_object = SimWrap(p, ctrl)
-sim_object.show_plots = True
-sim_object.simulate()
-
-
-
-
-
-#graphs.show()
+main_interd(p,ctrl)
+#main_thesis(p,ctrl)
 
 
 
@@ -178,4 +201,12 @@ sim_object.simulate()
 
 
 
-        
+
+
+
+
+
+
+
+
+#  LocalWords:  avgwindow

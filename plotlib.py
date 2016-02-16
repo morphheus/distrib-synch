@@ -37,7 +37,6 @@ def remove_zeropad(x,y,repad_ratio):
     outy = y[lo:(hi+1)]
     return outx,outy
 
-#---------------------
 def discrete(*args, repad_ratio=0.1):
     """Plots a discrete graph with vertical bars"""
     if len(args) < 1 and len(args) > 2:
@@ -60,8 +59,6 @@ def discrete(*args, repad_ratio=0.1):
     plt.xlim(x_lims)
     return fh
 
-
-#---------------------
 def continuous(*args, repad_ratio=0.1, label='curve0'):
     """Plots a continuous graph"""
     if len(args) < 1 and len(args) > 2:
@@ -84,16 +81,12 @@ def continuous(*args, repad_ratio=0.1, label='curve0'):
 
     return fh
 
-
-#---------------------
 def save(name, **kwargs):
     """Saves the current figure to """
     if save != '':
         fname = GRAPH_OUTPUT_LOCATION + name + '.' + GRAPH_OUTPUT_FORMAT
         plt.savefig(fname, bbox_inches='tight', format=GRAPH_OUTPUT_FORMAT)
 
-
-#---------------------
 def show():
     plt.show()
 
@@ -122,21 +115,18 @@ def hair(samples,param, y_label='Parameter', savename=''):
     save(savename)
     return fh
 
-
-#--------------------------
-def post_sim_graphs(ctrl, show_plots):
+def post_sim_graphs(simwrap):
     """Graphs to output at the end of a simulation"""
+    ctrl = simwrap.ctrl
     # CFO graph
     hair(ctrl.sample_inter , ctrl.deltaf_inter , y_label='CFO (\Delta\lambda)', savename='lastCFO');
-    if show_plots:
-        show()
+    if simwrap.show_CFO: show()
+    else: plt.close(plt.gcf())
 
     # TO graphs
     hair(ctrl.sample_inter , ctrl.theta_inter , y_label='TO', savename='lastTO'); 
-    if show_plots:
-        show()
+    if simwrap.show_TO: show()
 
-#---------------
 def barywidth(*args, savename='', fit_type='linear', residuals=False, **kwargs):
     """Accepts either a SyncParams() object or two iterables representing the CFO and the barywidth"""
 
@@ -207,18 +197,31 @@ def barywidth(*args, savename='', fit_type='linear', residuals=False, **kwargs):
         plt.ylabel('\sigma')
         plt.xlabel(xlabel)
         plt.xlim(x_lims)
+        msg = "Total error: " + str(np.abs(residuals_vals).sum())
+        print(msg)
     
 
     save(savename)
 
-
-#----------------------------
 def crosscorr(p, savename='', is_zpos=True):
-    p.full_sim = tmp # Restore entrance value
+    """Builds a crosscorrelation graph from the crosscorrelation with zpos (default)
+    Accepted input:
+    (<class 'Params'>)      will plot the crosscorrelation with the analog signal 
+    """
+    tmp_full_sim = p.full_sim # Save temporary fullsim value
+    tmp_bias = p.bias_removal # Save temporary fullsim value
+    p.full_sim = False
+    p.bias_removal = False
+
+    _, _, rpos, rneg = calc_both_barycenters(p, mode='Full')
+    p.full_sim = tmp_full_sim # Restore entrance value
+    p.bias_removal = tmp_bias # Restore entrance value
+
 
     y = rpos if is_zpos else rneg
-    label = 'Leading' if is_zpos else 'Trailing'
 
+    #label = 'Leading' if is_zpos else 'Trailing'
+    label = None
     
     x = np.arange(len(y))
     # Only plot the non-zero interval
@@ -228,18 +231,15 @@ def crosscorr(p, savename='', is_zpos=True):
     continuous(x,y, label=label)
     plt.xlabel('l')
     plt.ylabel('|r[l]|')
-    plt.legend()
+    if label is not None: plt.legend()
 
     save(savename)
     return x, y, rpos, rneg
 
-
-#-------------------
 def crosscorr_zneg(p, savename=''):
     """Same as crosscorr, but with zneg instead"""
     crosscorr(p, savename=savename, is_zpos=False)
 
-#-------------------
 def crosscorr_both(p, savename=''):
     """Builds a crosscorrelation graph from the crosscorrelation of both zpos and zneg
     Accepted input:
@@ -268,11 +268,9 @@ def crosscorr_both(p, savename=''):
 
     save(savename)
 
-
-#----------------
 def analog(p, savename=''):
     y = abs(p.analog_sig)
-    x = np.arange(len(y)) - len(y)/2 + 0.5
+    x = np.arange(len(y)) - math.floor(len(y)/2)
 
     fh = discrete(x,y)
     
@@ -282,26 +280,21 @@ def analog(p, savename=''):
     save(savename)
     return fh
 
-
-#------------------
 def analog_zpos(p, savename=''):
     
     
     y = abs(p.analog_zpos)
-    x = np.arange(len(y)) - len(y)/2 + 0.5
-    x = x/p.f_samp
+    x = np.arange(len(y)) 
     
     fh = discrete(x,y)
 
-    plt.xlabel('t')
+    plt.xlabel('n')
     plt.ylabel('|z(t)|')
 
     
     
     return fh
 
-
-#----------------
 def pulse(p,savename=''):
     
     y = np.real(p.pulse)

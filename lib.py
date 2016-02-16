@@ -22,37 +22,33 @@ FLOAT_DTYPE = 'float64'
 CPLX_DTYPE = 'complex128'
 INT_DTYPE = 'int64'
 
+crosscorr_fct = lambda f,g,mode: np.correlate(f,g,mode=mode)
+crosscorr_fct = lambda f,g,mode: fftconvolve(g, f.conjugate(),mode=mode)
 
-#---------
+
+
+#--------------------
 def zadoff(u, N,oversampling=1,  q=0):
     """Returns a zadoff-chu sequence"""
 
     x = np.linspace(0, N-1, N*oversampling, dtype='float64')
     return np.exp(-1j*pi*u*x*(x+1+2*q)/N)
 
-
-#---------------------
 def logistic(x, coeffs):
     """Logistic function with y-intercept always  0"""
     return (1/(1+np.exp(coeffs[1]*x))-0.5)*coeffs[0] + coeffs[2]*x
 
-
-#---------------------
 def cosine_zadoff_overlap(u, N,oversampling=1,  q=0):
     """Returns a cos(un^2) sequence"""
 
     x = np.linspace(0, N-1, N*oversampling, dtype='float64')
     return np.cos(pi*u*x*(x+1+2*q)/N)
 
-
-#---------------------
 def step_sin(x, a, b, h, k):
     """ x + sin(x), with the 4 canonical parameters"""
     xval = b*(x-h)
     return a*(xval+np.sin(xval)) + k
 
-
-#---------
 def cplx_gaussian(shape, noise_variance):
     """Assume jointly gaussian noise. Real and Imaginary parts have
     noise_variance/2 actual variance"""
@@ -65,8 +61,81 @@ def cplx_gaussian(shape, noise_variance):
         x = np.array([0+0j]*shape[0]*shape[1], dtype=CPLX_DTYPE).reshape(shape[0],-1)
     return x
 
+def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
+    """Raised cosine:
+    N: Number of samples
+    a: rolloff factor (alpha)
+    T: symbol period
+    f: sampling rate
 
-#------------
+    t: time indexes associated with impulse response
+    h: impulse response
+
+    NOTE: this thing far from optimized
+    """
+    time = (np.arange(N,dtype=dtype)-N/2+0.5)/float(f)
+    zero_entry = math.floor(N/2) # Index of entry with a zero
+    if not N % 2:
+        zero_entry = -1
+
+    warnings.filterwarnings("ignore")
+    h = np.empty(N, dtype=dtype)
+    for k, t in enumerate(time):
+        if k == zero_entry:
+            h[k] = 1
+        #elif a != 0 and abs(t) == T/(2*a):
+        #    h[k] = np.sin(pi*t/T) / (pi*t/T )
+        else: 
+            h[k] = np.sin(pi*t/T) * np.cos(pi*a*t/T) / (pi*t/T  *  (1-4*(a*t/T)**2 ))
+
+    for k, val in enumerate(h):
+        if math.isinf(val) or math.isnan(val):
+            h[k] = np.sin(pi*time[k]/T) / (pi*time[k]/T )
+
+
+    
+    warnings.filterwarnings("always")
+    return time,h
+
+def rrcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
+    """Root Raised cosine:
+    N: Number of samples
+    a: rolloff factor (alpha)
+    T: symbol period
+    f: sampling rate
+
+    t: time indexes associated with impulse response
+    h: impulse response
+
+    """
+    time = (np.arange(N,dtype=dtype)-N/2+0.5)/float(f)
+    zero_entry = math.floor(N/2) # Index of entry with a zero
+    if not N % 2:
+        zero_entry = -1
+
+    warnings.filterwarnings("ignore")
+    h = np.empty(N, dtype=dtype)
+    for k, t in enumerate(time):
+        if k == zero_entry:
+            h[k] = (1-a+4*a/pi)
+        else: 
+            #h[k] = np.sin(pi*t/T) * np.cos(pi*a*t/T) / (pi*t/T  *  (1-4*(a*t/T)**2 ))
+            h[k] =  (4*a/(pi)) * (
+                np.cos((1+a)*pi*t/T) + np.sin((1-a)*pi*t/T)/(4*a*t/T)
+            ) / (
+                1-(4*a*t/T)**2
+            )
+
+    for k, val in enumerate(h):
+        if math.isinf(val) or math.isnan(val):
+            h[k] = ((1+2/pi)*np.sin(pi/(4*a)) + (1-2/pi)*np.cos(pi/(4*a))) * (a/(np.sqrt(2)))
+
+
+    
+    warnings.filterwarnings("always")
+    return time,h
+
+#--------------------
 def calc_snr(ctrl,p):
     """Calculates the SNR of the system provided"""
     noise_variance = np.float64(ctrl.noise_std)**2
@@ -81,8 +150,6 @@ def calc_snr(ctrl,p):
     snr_db = 10*np.log10(snr)
     return(snr_db)
 
-
-#------------
 def in_place_mov_avg(vector, wlims):
     """Runs an in-place moving average on the input vector."""
     # vector: input array
@@ -129,8 +196,6 @@ def in_place_mov_avg(vector, wlims):
     for k in range(lb):
         vector[vlen-lb+k] = tmp.popleft()
 
-
-#------------
 def cumsum_mov_avg(vector, N):
     """Runs an in-place moving average on the input vector. Uses cumulative sums, and may run into overflow issues
     vector: input numpy array
@@ -153,8 +218,6 @@ def cumsum_mov_avg(vector, N):
 
     return MA
 
-
-#------------
 def convolve_mov_avg(vector,N):
     """Computes the running mean of width N on the vector. Uses convolution"""
     if N%2 == 0:
@@ -174,66 +237,6 @@ def convolve_mov_avg(vector,N):
 
     return MA
 
-
-#---------
-def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, mode='valid', ma_window=1):
-    """Outputs the barycenter location of 'f' in 'g'. g is expected to be the
-    longer array
-    Note: barycenter will correspond to the entry IN THE CROSS CORRELATION
-
-    bias_thresh will only weight the peaks within bias_thresh of the maximum.
-
-    ma_window will run a moving average on the cross-correlation before taking the weighted average
-    
-    """
-    if len(g) < len(f):
-        raise AttributeError("Expected 'g' to be longer than 'f'")
-    
-    if method == 'numpy':
-        cross_correlation = np.correlate(g, f, mode=mode)
-    elif method == 'scipy':
-        cross_correlation = fftconvolve(g, f.conjugate(),mode=mode)
-    else: raise ValueError("Unkwnown '" + method +"' method")
-
-
-    cross_correlation = np.absolute(cross_correlation)
-    if bias_thresh:
-        """We calculate the bias to remove from the absolute of the crosscorr"""
-        maxval = np.max(cross_correlation)
-        bias = maxval*bias_thresh
-        cross_correlation -= bias
-        np.clip(cross_correlation, 0, float('inf'), out=cross_correlation)
-
-
-    # in-place MA filter on the cross correlation
-    if ma_window % 2 == 0 or ma_window < 0:
-        raise Exception('Moving average window should be odd and positive')
-
-    if ma_window != 1:
-        cross_correlation = convolve_mov_avg( cross_correlation, ma_window)
-
-
-    
-    # Generete stuff for weighted average
-    weight = cross_correlation**power_weight
-    
-    weightsum = np.sum(weight)
-    lag = np.indices(weight.shape)[0]
-
-    # If empty cross_correlation, return -1. Otherwise, perform weighted average
-    if not weightsum:
-        barycenter = -1
-    else:
-        barycenter = np.sum(weight*lag)/weightsum
-
-
-    if mode == 'valid':
-        barycenter += math.floor(len(f)/2) # Correct for valid mode
-    
-    return barycenter, cross_correlation
-
-
-#------------------
 def d_to_a(values, pulse, spacing,dtype=CPLX_DTYPE):
     """outputs an array with modulated pulses"""
     plen = len(pulse)
@@ -246,86 +249,7 @@ def d_to_a(values, pulse, spacing,dtype=CPLX_DTYPE):
 
     return output
 
-
-#---------------------------
-def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
-    """Raised cosine:
-    N: Number of samples
-    a: rolloff factor (alpha)
-    T: symbol period
-    f: sampling rate
-
-    t: time indexes associated with impulse response
-    h: impulse response
-
-    NOTE: this thing far from optimized
-    """
-    time = (np.arange(N,dtype=dtype)-N/2+0.5)/float(f)
-    zero_entry = math.floor(N/2) # Index of entry with a zero
-    if not N % 2:
-        zero_entry = -1
-
-    warnings.filterwarnings("ignore")
-    h = np.empty(N, dtype=dtype)
-    for k, t in enumerate(time):
-        if k == zero_entry:
-            h[k] = 1
-        #elif a != 0 and abs(t) == T/(2*a):
-        #    h[k] = np.sin(pi*t/T) / (pi*t/T )
-        else: 
-            h[k] = np.sin(pi*t/T) * np.cos(pi*a*t/T) / (pi*t/T  *  (1-4*(a*t/T)**2 ))
-
-    for k, val in enumerate(h):
-        if math.isinf(val) or math.isnan(val):
-            h[k] = np.sin(pi*time[k]/T) / (pi*time[k]/T )
-
-
-    
-    warnings.filterwarnings("always")
-    return time,h
-
-  
-# -------------------
-def calc_both_barycenters(p, *args,mode='valid'):
-    """Wrapper that calculates the barycenter on the specified channel. If no channel specified,
-    it uses analog_sig instead"""
-    if len(args) > 1:
-        raise TypeError('Too many arguments')
-    
-    if p.full_sim and len(args) > 0:
-        g = args[0]
-    else:
-        g = p.analog_sig
-
-
-    if p.crosscorr_fct == 'zeropadded':
-        f1 = p.pad_zpos
-        f2 = p.pad_zneg
-    elif p.crosscorr_fct == 'analog':
-        f1 = p.analog_zpos
-        f2 = p.analog_zneg
-    else:
-        raise Exception('Invalid p.crosscorr_fct value')
-    
-    barypos, crosscorrpos =barycenter_correlation(f1 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode, ma_window=p.ma_window) 
-    baryneg, crosscorrneg =barycenter_correlation(f2 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode, ma_window=p.ma_window) 
-
-    return barypos, baryneg, crosscorrpos, crosscorrneg
-
-
-#------------------------
-def build_timestamp_id():
-    """Builds a timestamp, and appens a random 3 digit number after it"""
-    tempo = time.localtime()
-    vals = ['year', 'mon', 'mday', 'hour', 'min', 'sec']
-    vals = ['tm_' + x for x in vals]
-
-    tstr = [str(getattr(tempo,x)).zfill(2) for x in vals]
-
-    return int(''.join(tstr) + str(np.random.randint(999)).zfill(3))
-
-
-#------------------------
+#--------------------
 def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=False):
     """Generates the barywidth map for a given range, given as a fraction of f_symb
     If the map already exists, it pulls it from the sql database instead"""
@@ -345,7 +269,7 @@ def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=Fa
     
     # Fetch all known barywidths
     save_skiplist = ['full_sim', 'init_update', 'init_basewidth', 'TO', 'CFO']
-    query_skiplist = save_skiplist + ['basewidth', 'baryslope', 'order2fit']
+    query_skiplist = save_skiplist + ['basewidth', 'baryslope', 'order2fit', 'logisticfit']
     values_to_query = {key:p.__dict__[key] for key in p.__dict__.keys() if key not in query_skiplist}
     values_to_query['reach'] = reach
     values_to_query['scaling'] = scaling
@@ -362,45 +286,21 @@ def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=Fa
     
     # Fetch data if possible/allowed. If data exist but must recalc, delete existing.
     if db_output and not force_calculate:
-        tmp = db.fetch_cols(db_output[0][0], ['baryslope', 'basewidth', 'barywidth_arr', 'order2fit', 'CFO_arr', 'logisticfit'], conn=conn, tn=sql_table_name)
+        to_fetch = ['baryslope', 'basewidth', 'barywidth_arr', 'order2fit', 'CFO_arr', 'logisticfit']
+        tmp = db.fetch_cols(db_output[0][0], to_fetch , conn=conn, tn=sql_table_name)
         conn.close()
         p.add(baryslope=tmp[0])
         p.add(basewidth=tmp[1])
         p.add(barywidth_arr=tmp[2])
         p.add(order2fit=tmp[3])
         p.add(CFO_arr=tmp[4])
-        #p.add(logisticfit=tmp[5])
+        p.add(logisticfit=tmp[5])
         p.init_basewidth = True
-        if disp: print('dBase ID: ' + str(db_output[0][0]))
+        if disp: db.pprint_date(db_output[0][0])
         return CFO, tmp[2]
     elif db_output and force_calculate:
         db.del_row(db_output[0][0], conn=conn, tn=sql_table_name)
 
-
-    # Outputs which entry isn't matching DEBUG CODE
-    """
-        db_output = db.fetchall(tn=sql_table_name)
-        collist = db.fetch_collist(tn=sql_table_name)
-
-        db_a = db_output[0][collist.index('analog_sig')]
-        mem_a = p.analog_sig
-        warnings.filterwarnings('ignore')
-        for k,col in enumerate(collist):
-            try:
-                if db_output[0][k] == p.__dict__[col]:
-                    string = '-'*5
-                else:
-                    string = 'x'*5
-                print(string + ' ' + col)
-            except (ValueError):
-                if (db_output[0][k]==p.__dict__[col]).all():
-                    string = '-'*5
-                else:
-                    string = 'x'*5
-                print(string + ' ' + col)
-            except KeyError:
-                pass
-   """ 
 
 
     
@@ -479,14 +379,127 @@ def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=Fa
     conn.close()
     return CFO, barywidths
 
+def calc_both_barycenters(p, *args,mode='valid'):
+    """Wrapper that calculates the barycenter on the specified channel. If no channel specified,
+    it uses analog_sig instead"""
+    if len(args) > 1:
+        raise TypeError('Too many arguments')
+    
+    if p.full_sim and len(args) > 0:
+        g = args[0]
+    else:
+        g = p.analog_sig
 
-#-------------------------
+
+    # Single ZC handling
+    if p.train_type == 'singledecimate':
+        decimated_signal, start_index, _ = match_decimate(g, p.pulse, p.spacing)
+        crosscorrpos = np.abs(crosscorr_fct(p.training_seq, decimated_signal, 'same'))
+        barypos = start_index + p.spacing*np.argmax(crosscorrpos)
+        return barypos, barypos, crosscorrpos, crosscorrpos
+
+    
+
+    # Multi zc handiling
+    if p.crosscorr_fct == 'zeropadded':
+        f1 = p.pad_zpos
+        f2 = p.pad_zneg
+    elif p.crosscorr_fct == 'analog':
+        f1 = p.analog_zpos
+        f2 = p.analog_zneg
+    else:
+        raise Exception('Invalid p.crosscorr_fct value')
+    
+    barypos, crosscorrpos =barycenter_correlation(f1 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode, ma_window=p.ma_window) 
+    baryneg, crosscorrneg =barycenter_correlation(f2 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode, ma_window=p.ma_window) 
+
+
+    return barypos, baryneg, crosscorrpos, crosscorrneg
+
+def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, mode='valid', ma_window=1):
+    """Outputs the barycenter location of 'f' in 'g'. g is expected to be the
+    longer array
+    Note: barycenter will correspond to the entry IN THE CROSS CORRELATION
+
+    bias_thresh will only weight the peaks within bias_thresh of the maximum.
+
+    ma_window will run a moving average on the cross-correlation before taking the weighted average
+    
+    """
+    if len(g) < len(f):
+        raise AttributeError("Expected 'g' to be longer than 'f'")
+    
+    cross_correlation = crosscorr_fct(f, g, mode)
+
+    cross_correlation = np.absolute(cross_correlation)
+    if bias_thresh:
+        """We calculate the bias to remove from the absolute of the crosscorr"""
+        maxval = np.max(cross_correlation)
+        bias = maxval*bias_thresh
+        cross_correlation -= bias
+        np.clip(cross_correlation, 0, float('inf'), out=cross_correlation)
+
+
+    # in-place MA filter on the cross correlation
+    if ma_window % 2 == 0 or ma_window < 0:
+        raise Exception('Moving average window should be odd and positive')
+
+    if ma_window != 1:
+        cross_correlation = convolve_mov_avg( cross_correlation, ma_window)
+
+
+    
+    # Generete stuff for weighted average
+    weight = cross_correlation**power_weight
+    
+    weightsum = np.sum(weight)
+    lag = np.indices(weight.shape)[0]
+
+    # If empty cross_correlation, return -1. Otherwise, perform weighted average
+    if not weightsum:
+        barycenter = -1
+    else:
+        barycenter = np.sum(weight*lag)/weightsum
+
+
+    if mode == 'valid':
+        barycenter += math.floor(len(f)/2) # Correct for valid mode
+    
+    return barycenter, cross_correlation
+
+def match_decimate(signal, pulse, spacing, method='numpy', mode='same'):
+    """Cross-correlated the signal with the shaping pulse
+    Then, decimate the resulting signal such that the output has the highest energy
+    signal : Signal to pply matched filter on
+    pulse  : Signal to match filter with
+    spacing: Symbol period, in samples"""
+
+    cross_correlation = crosscorr_fct(pulse,signal, mode)
+
+
+    # Pick decimation with highest energy
+
+    abs_crosscorr = np.abs(cross_correlation)
+    max_energy = 0
+    decimated_start_index = 0
+    for k in range(spacing):
+        energy = abs_crosscorr[k::spacing].sum()
+        if energy > max_energy:
+            max_energy = energy
+            decimated_start_index = k
+
+    decimated = cross_correlation[decimated_start_index::spacing]
+    
+    return decimated, decimated_start_index,  cross_correlation
+
+#--------------------
+def cfo_mapper_pass(barywidth, p):
+    return 0
+
 def cfo_mapper_linear(barywidth, p):
     tmp = (barywidth - p.basewidth) / (p.baryslope)
     return tmp
 
-
-#-------------------------
 def cfo_mapper_order2(barywidth, p):
     poly = p.order2fit
     poly[2] = p.basewidth - barywidth
@@ -498,8 +511,6 @@ def cfo_mapper_order2(barywidth, p):
     else:
         return np.min(roots)
 
-
-#-------------------------
 def cfo_mapper_injective(barywidth, p):
     """Does direct mapping between barywidth and CFO. Requires monotone increasing barywidth map"""
     # Works well with power_weight=8
@@ -524,20 +535,15 @@ def cfo_mapper_injective(barywidth, p):
 
     return p.CFO_arr[idx]
 
-
-#-------------------------
 def cfo_mapper_step_sin(barywidth, p):
     """Step sin function mapper"""
 
     return none
 
-
-#------------------------
+#--------------------
 def delay_pd_gaussian():
     pass
 
-
-#------------------------
 def delay_pdf_static(ctrl):
     """Simple exponentially decaying echoes"""
     taps = ctrl.max_echo_taps
@@ -553,8 +559,6 @@ def delay_pdf_static(ctrl):
     amp = np.array(amp_list, dtype=CPLX_DTYPE)
     return delays, amp
 
-
-#-----------------------
 def delay_pdf_exp(ctrl):
     """Uniformly distributed delay with exponentially decaying amplitudes.
     If they delay is t, then the associated amplitude is:
@@ -577,8 +581,6 @@ def delay_pdf_exp(ctrl):
     amp = np.array(amp_list, dtype=CPLX_DTYPE)
     return delays, amp
 
-
-#------------------------
 def build_delay_matrix(ctrl, delay_fct=delay_pdf_exp):
     """Insert documentation here"""
     # Note that PDF functions must be declared/imported BEFORE this function definition
@@ -606,13 +608,15 @@ def build_delay_matrix(ctrl, delay_fct=delay_pdf_exp):
     ctrl.echo_delay = echoes['delay']
     ctrl.echo_amp = echoes['amp']
 
+#--------------------
+def build_timestamp_id():
+    """Builds a timestamp, and appens a random 3 digit number after it"""
+    return db.build_timestamp_id()
+
 
 ##########################
 # CLASSDEFS
 #########################
-
-
-# ------------
 class Struct: 
     """Basic structure"""
     def add(self,**kwargs):
@@ -626,9 +630,6 @@ class Struct:
         for name,val in self:
             print(name + '\n' + str(val)+ '\n')
 
-
-
-#--------------
 class SyncParams(Struct):
     """Parameter struct containing all the parameters used for the simulation, from the generation of the modulated training sequence to the exponent of the cross-correlation"""
 
@@ -665,7 +666,7 @@ class SyncParams(Struct):
 
         # A chain of ZC
         if self.train_type == 'chain':
-            zeros_count = round(self.zc_len*self.central_padding) +1
+            zeros_count = round(self.zc_len*self.central_padding)
             if zeros_count % 2 == 0 and zeros_count > 2: zeros_count -= 1
 
             training_seq = np.concatenate(tuple([zneg]*self.repeat+[np.zeros(zeros_count)]+[zpos]*self.repeat))
@@ -675,7 +676,7 @@ class SyncParams(Struct):
             training_seq = cosine_zadoff_overlap(1, self.zc_len)
 
         # A single ZC
-        elif self.train_type == 'single':
+        elif self.train_type == 'singledecimate':
             training_seq = zpos.copy()
 
         # Wrong train_type
@@ -734,8 +735,10 @@ class SyncParams(Struct):
         """Builds pulse from current parameters"""
         if self.pulse_type == 'raisedcosine':
             time, pulse = rcosfilter(self.plen, self.rolloff, 1/self.f_symb, self.f_samp)
+        elif self.pulse_type == 'rootraisedcosine':
+            time, pulse = rrcosfilter(self.plen, self.rolloff, 1/self.f_symb, self.f_samp)
         else:
-            raise ValueError('The "' + pulse_type + '" pulse type is unknown')
+            raise ValueError('The "' + self.pulse_type + '" pulse type is unknown')
 
         self.add(pulse_times=time)
         self.add(pulse=pulse)

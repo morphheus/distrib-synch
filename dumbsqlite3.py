@@ -38,6 +38,18 @@ def build_timestamp_id():
 
     return int(''.join(tstr) + str(np.random.randint(999)).zfill(3))
 
+def pprint_date(date):
+    """Pretty prints the dateid"""
+    datestr = str(date)
+
+    tmp = np.array([0,4,2,2,2,2,2,3]).cumsum() # Array of slice notation endpoints
+    slicelst = [slice(tmp[k],tmp[k+1]) for k in range(len(tmp)-1)]
+    part = [datestr[x] for x in slicelst]
+    part.reverse()
+
+    msg = 'dbase ID: ' + part.pop() + '/' + part.pop() + '/' + part.pop() + ' ' + \
+          part.pop() + 'h' + part.pop() + 'm' + part.pop() + 's rnd:' +  part.pop()
+    print(msg)
 
 #---------------------
 # TYPE ADAPT FUNCTIONS
@@ -66,7 +78,6 @@ def adapt_float64(number):
 def adapt_function(fct):
     return fct.__name__
 
-
 #----------------------
 # TYPE CONVERT FUNCTIONS
 def convert_array(text):
@@ -89,8 +100,6 @@ def convert_float64(number):
 def convert_function(string):
     return eval(string)
 
-
-
 #----------------------
 def connect(dbase_file=DEF_DB):
     
@@ -109,11 +118,6 @@ def connect(dbase_file=DEF_DB):
     conn = sqlite3.connect(dbase_file, detect_types=sqlite3.PARSE_DECLTYPES)
     return conn
 
-
-
-
-
-#----------------------
 def clear_table(tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
     close_conn = False
     if conn == False: 
@@ -132,9 +136,6 @@ def clear_table(tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
     if close_conn:
         conn.close()
 
-
-
-#----------------------
 def init(dbase_file=DEF_DB, table_name=DEF_TABLE):
     conn = sqlite3.connect(dbase_file)
     c = conn.cursor()
@@ -174,18 +175,10 @@ def init(dbase_file=DEF_DB, table_name=DEF_TABLE):
     conn.commit()
     conn.close()
 
-
-
-
-#---------------------
 def get_type_assoc(conn, tn_assoc=DEF_ASSOC_TABLE):
     c = conn.cursor()
     cursor = c.execute('select * from ' + tn_assoc)
     return dict(cursor.fetchall())
-
-
-
-
 
 #-------------------------
 def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
@@ -250,9 +243,21 @@ def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
     if close_conn:
         conn.close()
 
+def del_row(date, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
+    """Deletes the row matching the date"""
+    close_conn = False
+    if conn == False: 
+        conn = connect(dbase_file)
+        closeconn = True
 
+    c = conn.cursor()
 
-
+    string = "DELETE FROM " + tn + " WHERE date = " + str(date)
+    c.execute(string)
+    conn.commit()
+    
+    if close_conn:
+        conn.close()
 
 #--------------------
 # FETCHING FUNCTIONS
@@ -276,11 +281,6 @@ def fetchall(tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
 
     return output
 
-
-
-
-
-#-------------------------
 def fetch_collist(tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
     """Fetches all entries and returns it as a dict of tuples, where each tuple represents all the (ordered) values in that column)"""
     
@@ -300,9 +300,6 @@ def fetch_collist(tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
 
     return dbcols
 
-
-
-#-----------------------
 def fetch_matching(entry_dict, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False, get_data=True):
     """Fetches the rows that matches the entry dict.
     If get_data = False, then it only outputs the dates (not the full row): """
@@ -334,38 +331,9 @@ def fetch_matching(entry_dict, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False, get_
 
     return cursor.fetchall()
 
-
-#-----------------------
 def fetchone(date, column , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
     return fetch_cols(date, [column] , tn=tn, dbase_file=dbase_file, conn=conn)[0]
 
-
-
-
-#-----------------------
-def del_row(date, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
-    """Deletes the row matching the date"""
-    close_conn = False
-    if conn == False: 
-        conn = connect(dbase_file)
-        closeconn = True
-
-    c = conn.cursor()
-
-    string = "DELETE FROM " + tn + " WHERE date = " + str(date)
-    c.execute(string)
-    conn.commit()
-    
-    if close_conn:
-        conn.close()
-
-   
-
-
-
-
-
-#-----------------------
 def fetch_cols(date, collist , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
     """Fetches the columns in collist"""
     close_conn = False
@@ -383,3 +351,6 @@ def fetch_cols(date, collist , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
         conn.close()
 
     return c.fetchall()[0]
+
+
+

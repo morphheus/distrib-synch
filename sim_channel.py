@@ -51,6 +51,7 @@ class SimControls(lib.Struct):
         self.CFO_processing_avgtype = 'mov_avg' # 'mov_avg' or 'reg' (non-mov avg)
         self.CFO_processing_avgwindow = 5
 
+        # Flow control
         self.init_update = True
 
     def update(self):
@@ -114,11 +115,10 @@ def default_ctrl_dict():
 def runsim(p,ctrl):
     """Executes a simulation with the signal parameters p and controls parameters ctrl"""
 
-    # Prep
-
     #----------------
     # INPUTS
     #----------------
+
     # Put important ctrl values in local namespace ease of writing. These values shound not
     # change under any circumstances
     nodecount = ctrl.nodecount
@@ -311,20 +311,18 @@ def runsim(p,ctrl):
 
 
             # -------
-            # TO and CFO calculation
+            # TO correction
             TO = int(round((barypos+baryneg)/2))
             TO += -1*winlen + wait_til_adjust[curnode]  # adjust with respect to past pulse
 
-            CFO = cfo_mapper_fct(barypos-baryneg, p)
-
-
-            # --------
-            # TO correction
             TO_correction = round(TO*epsilon_TO)
             theta[curnode] += TO_correction
             theta[curnode] = theta[curnode] % phi[curnode]
 
 
+            #------------------
+            # CFO correction
+            CFO = cfo_mapper_fct(barypos-baryneg, p)
             
             # CFO correction clipping
             CFO_correction = CFO*epsilon_CFO
