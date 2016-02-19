@@ -11,6 +11,7 @@ with warnings.catch_warnings():
     warnings.filterwarnings("ignore",category=PendingDeprecationWarning)
     import matplotlib
     import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
 
 GRAPH_OUTPUT_LOCATION = 'graphs/' # don't forget the trailing slash
 GRAPH_OUTPUT_FORMAT = 'eps'
@@ -18,10 +19,7 @@ GRAPH_OUTPUT_FORMAT = 'eps'
 matplotlib.rcParams.update({'font.size': 14})
 
 
-###################
-# Helper functions
-###################
-#--------------------
+#----------------
 def remove_zeropad(x,y,repad_ratio):
     """Returns the truncated x and y arrays with the zero padding removed"""
     if len(x) > len(y):
@@ -29,7 +27,7 @@ def remove_zeropad(x,y,repad_ratio):
     
     first, last = y.nonzero()[0][[0,-1]]
 
-    padding = int(round(repad_ratio*(last-first)))
+    padding = int(round(repad_ratio*(last-first+1)))
     lo = max(0, first - padding)
     hi = min(len(y), last + padding)
 
@@ -81,6 +79,18 @@ def continuous(*args, repad_ratio=0.1, label='curve0'):
 
     return fh
 
+def surface3d(x,y,z, density=20, **kwargs):
+    """3d plot of the x, y vectors and z 2d array"""
+
+    xstride = max(int(round(len(x)/density)),1)
+    ystride = max(int(round(len(y)/density)),1)
+    
+    X, Y = np.meshgrid(x,y)
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    ax.plot_surface(X,Y,z,cstride=xstride, rstride=ystride, cmap=matplotlib.cm.coolwarm, **kwargs)
+    return fig, ax
+
 def save(name, **kwargs):
     """Saves the current figure to """
     if save != '':
@@ -90,13 +100,7 @@ def save(name, **kwargs):
 def show():
     plt.show()
 
-
-
-###################
-# SPECIFIC GRAPHS
-###################
-
-#-------------------------
+#----------------
 def hair(samples,param, y_label='Parameter', savename=''):
     """Plots an evolution graph of the parameter of"""
     # samples: sample_inter output from the simulation
@@ -310,4 +314,4 @@ def pulse(p,savename=''):
     return x,y
 
 
-
+# -- THEORY GRAPHS SECTION

@@ -139,7 +139,7 @@ def rrcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
 def calc_snr(ctrl,p):
     """Calculates the SNR of the system provided"""
     noise_variance = np.float64(ctrl.noise_std)**2
-    signal_power = np.float64((np.sum(np.abs(p.analog_sig))+1)/len(p.analog_sig))**2
+    signal_power = np.float64((np.sum(np.abs(p.analog_sig)))/len(p.analog_sig))**2
 
 
     if not noise_variance == 0:
@@ -467,7 +467,7 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, m
     
     return barycenter, cross_correlation
 
-def match_decimate(signal, pulse, spacing, method='numpy', mode='same'):
+def match_decimate(signal, pulse, spacing, mode='same'):
     """Cross-correlated the signal with the shaping pulse
     Then, decimate the resulting signal such that the output has the highest energy
     signal : Signal to pply matched filter on
@@ -476,9 +476,7 @@ def match_decimate(signal, pulse, spacing, method='numpy', mode='same'):
 
     cross_correlation = crosscorr_fct(pulse,signal, mode)
 
-
     # Pick decimation with highest energy
-
     abs_crosscorr = np.abs(cross_correlation)
     max_energy = 0
     decimated_start_index = 0
@@ -760,6 +758,7 @@ class SyncParams(Struct):
                                         np.zeros(zerocount + self.TO + self.trans_delay)))
         
             time_arr = (np.arange(len(analog_sig))+np.random.rand()*1000*len(analog_sig))*T
+            #time_arr = (np.arange(len(analog_sig)))*T
             CFO_arr = np.exp( 2*pi*1j*self.CFO*(time_arr - self.trans_delay))
             analog_sig = analog_sig*CFO_arr
 

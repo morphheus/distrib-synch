@@ -61,20 +61,17 @@ def dec_wrap1():
 
     return p, ctrl
 
-
-
-#-------------------------
 def dec_wrap2():
     """Single ZC sequence with Decimation"""
     p = lib.SyncParams()
     p.zc_len = 101
-    p.plen = 51
+    p.plen = 31
 
     p.rolloff = 0.2
     p.f_samp = 4e6
     p.f_symb = 1e6
     p.repeat = 1
-    p.spacing_factor = 2 # CHANGE TO TWO!
+    p.spacing_factor = 1 # CHANGE TO TWO!
 
     p.power_weight = 4
     p.full_sim = True
@@ -94,11 +91,11 @@ def dec_wrap2():
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = True # Needed to draw graphs
     ctrl.nodecount = 20 # Number of nodes
-    ctrl.CFO_step_wait = float('inf') # Use float('inf') to never corrrect for CFO
+    ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
 
     ctrl.theta_bounds = [0,1] # In units of phi
     ctrl.deltaf_bound = 3e-6
-    ctrl.noise_std = 0.1
+    ctrl.noise_std = 0
     ctrl.rand_init = True
     ctrl.non_rand_seed = 112312341 # Only used if rand_init is False
     ctrl.max_echo_taps = 1 
@@ -120,34 +117,23 @@ def dec_wrap2():
 
     return p, ctrl
 
-
-
 #------------------------
 def main_thesis(p,ctrl):
     graphs.barywidth(p, fit_type='linear', reach=ctrl.bmap_reach , scaling_fct=ctrl.bmap_scaling, residuals=True, force_calculate=False ); graphs.show(); exit()
 
-    print("SNR : " + str(lib.calc_snr(ctrl,p)) + " dB")
 
     sim_object = SimWrap(p, ctrl)
     sim_object.show_plots = True
     sim_object.simulate()
 
-
-
-#------------------------
 def main_interd(p,ctrl):
     #graphs.crosscorr(p); graphs.show(); exit()
     #graphs.analog(p); graphs.show(); exit()
     #graphs.pulse(p); graphs.show(); exit()
-    #graphs.crosscorr(p); graphs.show(); exit()
 
     sim_object = SimWrap(p, ctrl)
     sim_object.show_CFO = False
     sim_object.simulate()
-    
-
-
-
 
 #-----------------------
 class SimWrap(lib.Struct):
@@ -155,8 +141,11 @@ class SimWrap(lib.Struct):
 
     force_calculate = False # Forces the update of all values before starting the simulation
     make_plots = True
-    show_CFO = True
-    show_TO = True
+    show_CFO = True # only works if make_plots is True
+    show_TO = True # only works if make_plots is True
+    show_SNR = True
+    show_siglen = True
+    
 
     def __init__(self, p, ctrl):
         self.add(p=p)
@@ -168,6 +157,14 @@ class SimWrap(lib.Struct):
         if self.force_calculate:
             self.p.update()
             self.ctrl.update()
+
+        # Display SNR
+        msg = ''
+        if self.show_siglen: msg = 'Sync signal length: ' + str(len(p.analog_sig)) + '    '
+        if self.show_SNR: msg += "SNR : " + str(lib.calc_snr(self.ctrl,self.p)) + " dB"
+
+        if msg!='': print(msg)
+        
 
         # Exec the simulation and save the output
         runsim(self.p, self.ctrl)
@@ -181,11 +178,7 @@ class SimWrap(lib.Struct):
 
 
 
-############
-# MAIN
-############
 p, ctrl = dec_wrap2()
-
 main_interd(p,ctrl)
 #main_thesis(p,ctrl)
 
