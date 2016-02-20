@@ -2,6 +2,7 @@
 
 # User modules
 import lib
+import plotlib as graphs
 from lib import calc_both_barycenters, SyncParams
 
 # Python modules
@@ -16,6 +17,7 @@ from numpy import pi
 from pprint import pprint
 
 
+
 #----------------------------------
 class SimControls(lib.Struct):
     """Container object for the control parameters of the runsim() function"""
@@ -23,8 +25,8 @@ class SimControls(lib.Struct):
         """Default values"""
         self.steps = 30
         self.nodecount = 7
-        self.basephi = 1000
-        self.chansize = self.basephi*50
+        self.basephi = 2000
+        self.chansize = self.basephi*self.steps
         self.noise_std = 0
         self.phi_bounds = [1,1]
         self.theta_bounds = [0,1]
@@ -50,9 +52,16 @@ class SimControls(lib.Struct):
         self.max_CFO_correction = 0.02 # As a factor of f_symb
         self.CFO_processing_avgtype = 'mov_avg' # 'mov_avg' or 'reg' (non-mov avg)
         self.CFO_processing_avgwindow = 5
+        # Half-duplex constraint - all options relevant only if half_duplex is True
+        self.half_duplex = False
+        self.hd_slot0 = 0.3 # in terms of phi
+        self.hd_slot1 = 0.7 # in terms of phi
+        self.hd_block_during_emit = True
+        self.hd_block_extrawidth = 0 # as a factor of offset (see runsim to know what is offset)
 
         # Flow control
         self.init_update = True
+
 
     def update(self):
         """Must be run before runsim can be executed"""
@@ -71,43 +80,6 @@ def ordered_insert(sample, clknum):
     idx = bisect.bisect(queue_sample, sample)
     queue_sample.insert(idx, sample)
     queue_clk.insert(idx, clknum)
-
-
-#-------------------------
-def default_ctrl_dict():
-    out = {}
-    out['nodecount'] = 7
-    out['basephi'] = 1000
-    out['chansize'] = out['basephi']*50
-    out['noise_std'] = 0
-    out['phi_bounds'] = [1,1]
-    out['self_emit'] = False # IF set to False, the self-emit will just be skipped.
-    out['CFO_step_wait'] = 60
-    out['rand_init'] = False
-    out['display'] = True
-    out['keep_intermediate_values'] = False
-    out['saveall'] = False # This options also saves all fields in SyncParams to the control dict
-    out['cfo_mapper_fct'] = lib.cfo_mapper_linear
-    out['cfo_bias'] = 0 # in terms of f_samp
-    out['delay_fct'] = lib.delay_pdf_static
-    out['deltaf_bound'] = 0.02 # in units of f_samp
-    out['CFO_processing_avgtype'] = 'mov_avg' # 'mov_avg' or 'reg' (non-mov avg)
-    out['CFO_processing_avgwindow'] = 5
-
-
-    # Echo controls
-    out['max_echo_taps'] = 4
-    out['min_delay'] = 0
-
-    # Correction controls
-    out['epsilon_TO'] = 0.5
-    out['epsilon_CFO'] = 0.25
-    out['max_CFO_correction'] = 0.02 # As a factor of f_symb
-
-    return out
-
-
-
 
 
 
@@ -134,6 +106,7 @@ def runsim(p,ctrl):
     CFO_processing_avgwindow = ctrl.CFO_processing_avgwindow
     phi_minmax = ctrl.phi_minmax
     theta_minmax = ctrl.theta_minmax
+
 
     # IF echoes specified, to shove in array. OW, just don't worry about it
     try:
@@ -170,9 +143,10 @@ def runsim(p,ctrl):
     pulse_len = len(analog_pulse)
     offset = int((pulse_len-1)/2)
     max_sample = chansize-offset-np.max(echo_delay);
-    wait_til_adjust = np.zeros(nodecount, dtype='int64')
-    wait_til_emit = np.zeros(nodecount, dtype='int64')
-    prev_adjustsample = np.zeros(nodecount, dtype='int64')
+    wait_til_adjust = np.zeros(nodecount, dtype=lib.INT_DTYPE)
+    wait_til_emit = np.zeros(nodecount, dtype=lib.INT_DTYPE)
+    prev_adjustsample = np.zeros(nodecount, dtype=lib.INT_DTYPE)
+    prev_emit_range = [None for x in range(nodecount)]
     emit = np.array([True]*nodecount)
 
     if ctrl.keep_intermediate_values:
@@ -190,7 +164,16 @@ def runsim(p,ctrl):
     CFO_maxjump_direction = np.ones(nodecount)
     CFO_corr_list = [[] for x in range(nodecount)]
     TO_corr_list = [[] for x in range(nodecount)]
+    hd_sync_slot = np.array([0 if k%2 else 1 for k in range(nodecount)])
 
+    if ctrl.half_duplex:
+        emit_frac = np.array([ctrl.hd_slot0 if k==0 else ctrl.hd_slot1 for k in hd_sync_slot])
+    else:
+        np.array([1/2]*nodecount)
+    adjust_frac = 1-emit_frac;
+    
+    hd_correction = np.round((emit_frac-adjust_frac)*basephi).astype(dtype=lib.INT_DTYPE)
+    
     if not ctrl.rand_init:
         np.random.seed(ctrl.non_rand_seed)
     
@@ -205,15 +188,10 @@ def runsim(p,ctrl):
 
 
 
-    # First events happen on initial phase shift
-    for clknum, sample in enumerate(theta):
-        ordered_insert(sample+phi_minmax[1],clknum) # the + offset is to prevent accessing negative samples
-
     # Correction algorithms variables
     max_CFO_correction = ctrl.max_CFO_correction*p.f_symb
 
     # Release unused variables:
-    del sample, clknum
 
 
 
@@ -233,37 +211,39 @@ def runsim(p,ctrl):
             deltaf_inter[k].append(deltaf[k])
 
 
-    cursample = queue_sample.pop(0)
-    curnode = queue_clk.pop(0)
 
-
-    # These two must sum to 1!
-    emit_frac = 1/2;
-    adjust_frac = 1-emit_frac;
-
-
-    # Set the previous adjust sample as 1 period behind
-    for k in range(nodecount):
-        prev_adjustsample[k] = theta[k] - round(phi[k]*emit_frac) + phi_minmax[1]
-        if prev_adjustsample[k] < 0:
-            prev_adjustsample[k] = 0
+    # First event happens based on initial phase shift
+    for curclk, sample in enumerate(theta):
+        prev_adjustsample[curclk] = sample - phi[curclk] + phi_minmax[1]
+        if emit[curclk]:
+            first_event = int(round(emit_frac[curclk]*phi[curclk]))
+        else:
+            first_event = phi[curclk]
+            
+        ordered_insert(prev_adjustsample[curclk]+first_event,curclk) 
 
 
 
 
 
     # Main loop
+    del curclk, sample
+    cursample = queue_sample.pop(0)
+    curnode = queue_clk.pop(0)
     while cursample < max_sample:
 
         # ----------------
         # Emit phase
         if emit[curnode]:
-            
-
             minsample = cursample-offset
             maxsample = cursample+offset+1
             spread = range(minsample,maxsample)
 
+            # Store appropriate blackout range
+            tmp = int(round(offset*ctrl.hd_block_extrawidth))
+            prev_emit_range[curnode] = range(minsample-tmp, maxsample+tmp)
+
+            # Emit across all channels
             deltaf_arr = np.empty(pulse_len)
             for emitclk in range(nodecount):
                 if self_emit and emitclk == curnode: # Skip selfemission
@@ -279,7 +259,7 @@ def runsim(p,ctrl):
                         channels[emitclk, spread + echo_delay[curnode][emitclk][k]] += to_emit*curr_amp
 
             # Set next event
-            wait_til_adjust[curnode] = math.floor(phi[curnode]*adjust_frac)
+            wait_til_adjust[curnode] = math.floor(phi[curnode]*adjust_frac[curnode])
             ordered_insert(wait_til_adjust[curnode]+cursample, curnode)
 
             emit[curnode] = False
@@ -291,7 +271,6 @@ def runsim(p,ctrl):
         # ----------------
         # Adjust phase
         else:
-            """Assumptions: odd-length and symmetric pulse!"""
             # ------
             # Barycenter calculation
             winmax = cursample
@@ -299,6 +278,10 @@ def runsim(p,ctrl):
             winlen = winmax-winmin
 
             prev_adjustsample[curnode] = cursample
+
+            # Block channel values when curnode emitted
+            if ctrl.half_duplex and ctrl.hd_block_during_emit:
+                channels[curnode, prev_emit_range[curnode]] = 0
 
 
             if winlen > pulse_len + 1:
@@ -312,8 +295,14 @@ def runsim(p,ctrl):
 
             # -------
             # TO correction
-            TO = int(round((barypos+baryneg)/2))
-            TO += -1*winlen + wait_til_adjust[curnode]  # adjust with respect to past pulse
+            bary_avg = int(round((barypos+baryneg)/2)) 
+
+            # Offset with respect to emit time
+            TO = winmax - winlen + bary_avg - cursample + wait_til_adjust[curnode] 
+            
+            # Fix slot offset for 
+            if ctrl.half_duplex:
+                TO += hd_correction[curnode]
 
             TO_correction = round(TO*epsilon_TO)
             theta[curnode] += TO_correction
@@ -373,7 +362,7 @@ def runsim(p,ctrl):
 
             # --------
             # Set next event
-            wait_til_emit[curnode] = math.ceil(phi[curnode]*emit_frac)+cursample+TO_correction
+            wait_til_emit[curnode] = math.ceil(phi[curnode]*emit_frac[curnode])+cursample+TO_correction
             if wait_til_emit[curnode] < 1:
                 wait_til_emit[curnode] = 1
 

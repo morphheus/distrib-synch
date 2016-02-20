@@ -7,7 +7,7 @@ import os
 import lib
 import numpy as np
 
-from sim_channel import default_ctrl_dict, runsim, SimControls
+from sim_channel import runsim, SimControls
 
 
 
@@ -94,10 +94,12 @@ def dec_wrap2():
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
 
     ctrl.theta_bounds = [0,1] # In units of phi
-    ctrl.deltaf_bound = 3e-6
+    #ctrl.theta_bounds = [0.5,0.5] # In units of phi
+    #ctrl.deltaf_bound = 3e-6
+    ctrl.deltaf_bound = 0
     ctrl.noise_std = 0
-    ctrl.rand_init = True
-    ctrl.non_rand_seed = 112312341 # Only used if rand_init is False
+    ctrl.rand_init = False
+    ctrl.non_rand_seed = 192912341 # Only used if rand_init is False
     ctrl.max_echo_taps = 1 
 
     ctrl.bmap_reach = 3e-6
@@ -111,6 +113,12 @@ def dec_wrap2():
     #ctrl.delay_sigma = 0.001 # Standard deviation used for the generator delay function
     #ctrl.delay_fct = delay_pdf_exp
 
+    ctrl.half_duplex = True
+    ctrl.hd_slot0 = 0.3 # in terms of phi
+    ctrl.hd_slot1 = 0.7 # in terms of phi
+    ctrl.hd_block_during_emit = True
+    ctrl.hd_block_extrawidth = 0.2 # as a factor of offset (see runsim to know what is offset)
+    
     ctrl.saveall = True
 
     ctrl.update()
@@ -160,7 +168,8 @@ class SimWrap(lib.Struct):
 
         # Display SNR
         msg = ''
-        if self.show_siglen: msg = 'Sync signal length: ' + str(len(p.analog_sig)) + '    '
+        siglen_value = "{:.2f}".format(len(p.analog_sig)/ctrl.basephi)
+        if self.show_siglen: msg = 'Sync signal length: ' + siglen_value + ' basephi' + '    '
         if self.show_SNR: msg += "SNR : " + str(lib.calc_snr(self.ctrl,self.p)) + " dB"
 
         if msg!='': print(msg)
