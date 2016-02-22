@@ -187,9 +187,10 @@ class SimWrap(lib.Struct):
 
 
 
-p, ctrl = dec_wrap2()
-main_interd(p,ctrl)
-#main_thesis(p,ctrl)
+if __name__ == '__main__':
+    p, ctrl = dec_wrap2()
+    main_interd(p,ctrl)
+    #main_thesis(p,ctrl)
 
 
 
@@ -211,4 +212,4 @@ main_interd(p,ctrl)
 
 
 
-#  LocalWords:  avgwindow
+    #  LocalWords:  avgwindow

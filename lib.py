@@ -490,6 +490,7 @@ def match_decimate(signal, pulse, spacing, mode='same'):
     
     return decimated, decimated_start_index,  cross_correlation
 
+
 #--------------------
 def cfo_mapper_pass(barywidth, p):
     return 0

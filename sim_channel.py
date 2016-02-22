@@ -35,9 +35,6 @@ class SimControls(lib.Struct):
         self.rand_init = False
         self.display = True # Display progress of runsim
         self.keep_intermediate_values = False
-        self.saveall = False # This options also saves all fields in SyncParams to the control dict
-        self.cfo_mapper_fct = lib.cfo_mapper_linear
-        self.cfo_bias = 0 # in terms of f_samp
         self.delay_fct = lib.delay_pdf_static
         self.deltaf_bound = 0.02 # in units of f_samp
         self.bmap_reach = 3e-1
@@ -52,15 +49,25 @@ class SimControls(lib.Struct):
         self.max_CFO_correction = 0.02 # As a factor of f_symb
         self.CFO_processing_avgtype = 'mov_avg' # 'mov_avg' or 'reg' (non-mov avg)
         self.CFO_processing_avgwindow = 5
+        self.cfo_mapper_fct = lib.cfo_mapper_linear
+        self.cfo_bias = 0 # in terms of f_samp
         # Half-duplex constraint - all options relevant only if half_duplex is True
         self.half_duplex = False
         self.hd_slot0 = 0.3 # in terms of phi
         self.hd_slot1 = 0.7 # in terms of phi
         self.hd_block_during_emit = True
         self.hd_block_extrawidth = 0 # as a factor of offset (see runsim to know what is offset)
+        # Variable adjust window length - all options relevant only if half_duplex is True
+        self.var_winlen = True
+        self.vw_minsize = 2 # as a factor of len(p.analog_sig)
+        self.vw_lothreshold = 0.1 # winlen reduction threshold
+        self.vw_hithreshold = 0.1 # winlen increase threshold
+        self.vw_lofactor = 1.5 # winlen reduction factor
+        self.vw_hifactor = 2 # winlen increase factor
 
-        # Flow control
+        # Other
         self.init_update = True
+        self.saveall = False # This options also saves all fields in SyncParams to the control dict
 
 
     def update(self):
@@ -97,7 +104,6 @@ def runsim(p,ctrl):
     basephi = ctrl.basephi
     chansize = ctrl.chansize
     noise_std = ctrl.noise_std
-    self_emit = ctrl.self_emit
     CFO_step_wait = ctrl.CFO_step_wait
     epsilon_TO = ctrl.epsilon_TO
     epsilon_CFO = ctrl.epsilon_CFO
@@ -138,33 +144,36 @@ def runsim(p,ctrl):
 
 
     global queue_sample, queue_clk
+    # Simulation initialization
     queue_sample = []
     queue_clk = []
-    pulse_len = len(analog_pulse)
-    offset = int((pulse_len-1)/2)
+    sync_pulse_len = len(analog_pulse)
+    offset = int((sync_pulse_len-1)/2)
     max_sample = chansize-offset-np.max(echo_delay);
-    wait_til_adjust = np.zeros(nodecount, dtype=lib.INT_DTYPE)
-    wait_til_emit = np.zeros(nodecount, dtype=lib.INT_DTYPE)
-    prev_adjustsample = np.zeros(nodecount, dtype=lib.INT_DTYPE)
-    prev_emit_range = [None for x in range(nodecount)]
-    emit = np.array([True]*nodecount)
-
-    if ctrl.keep_intermediate_values:
-        sample_inter = [[] for k in range(nodecount)]
-        theta_inter = [[] for k in range(nodecount)]
-        phi_inter = [[] for k in range(nodecount)]
-        deltaf_inter = [[] for k in range(nodecount)]
 
 
-    
-    # Node initial values
+
+    # Node arrays initialization
     deltaf_minmax = np.array([-1*ctrl.deltaf_bound,ctrl.deltaf_bound])*p.f_symb
     do_CFO_correction = np.array([False]*nodecount)
     wait_CFO_correction = np.zeros(nodecount)
     CFO_maxjump_direction = np.ones(nodecount)
     CFO_corr_list = [[] for x in range(nodecount)]
     TO_corr_list = [[] for x in range(nodecount)]
+    wait_til_adjust = np.zeros(nodecount, dtype=lib.INT_DTYPE)
+    wait_til_emit = np.zeros(nodecount, dtype=lib.INT_DTYPE)
+    prev_adjustsample = np.zeros(nodecount, dtype=lib.INT_DTYPE)
+    prev_emit_range = [None for x in range(nodecount)]
+    prev_TO = np.array([float('inf')]*nodecount, dtype=lib.FLOAT_DTYPE)
+    nodes_winlen = np.array([ctrl.chansize]*nodecount, dtype=lib.INT_DTYPE)
+    emit = np.array([True]*nodecount)
     hd_sync_slot = np.array([0 if k%2 else 1 for k in range(nodecount)])
+
+    if ctrl.keep_intermediate_values:
+        sample_inter = [[] for k in range(nodecount)]
+        theta_inter = [[] for k in range(nodecount)]
+        phi_inter = [[] for k in range(nodecount)]
+        deltaf_inter = [[] for k in range(nodecount)]
 
     if ctrl.half_duplex:
         emit_frac = np.array([ctrl.hd_slot0 if k==0 else ctrl.hd_slot1 for k in hd_sync_slot])
@@ -174,6 +183,7 @@ def runsim(p,ctrl):
     
     hd_correction = np.round((emit_frac-adjust_frac)*basephi).astype(dtype=lib.INT_DTYPE)
     
+    # Node initial values
     if not ctrl.rand_init:
         np.random.seed(ctrl.non_rand_seed)
     
@@ -213,56 +223,56 @@ def runsim(p,ctrl):
 
 
     # First event happens based on initial phase shift
-    for curclk, sample in enumerate(theta):
-        prev_adjustsample[curclk] = sample - phi[curclk] + phi_minmax[1]
-        if emit[curclk]:
-            first_event = int(round(emit_frac[curclk]*phi[curclk]))
+    for clk, sample in enumerate(theta):
+        prev_adjustsample[clk] = sample - phi[clk] + phi_minmax[1]
+        if emit[clk]:
+            first_event = int(round(emit_frac[clk]*phi[clk]))
         else:
-            first_event = phi[curclk]
+            first_event = phi[clk]
             
-        ordered_insert(prev_adjustsample[curclk]+first_event,curclk) 
+        ordered_insert(prev_adjustsample[clk]+first_event,clk) 
 
 
 
 
 
     # Main loop
-    del curclk, sample
+    del clk, sample
     cursample = queue_sample.pop(0)
-    curnode = queue_clk.pop(0)
+    node = queue_clk.pop(0)
     while cursample < max_sample:
 
         # ----------------
         # Emit phase
-        if emit[curnode]:
+        if emit[node]:
             minsample = cursample-offset
             maxsample = cursample+offset+1
             spread = range(minsample,maxsample)
 
             # Store appropriate blackout range
             tmp = int(round(offset*ctrl.hd_block_extrawidth))
-            prev_emit_range[curnode] = range(minsample-tmp, maxsample+tmp)
+            prev_emit_range[node] = range(minsample-tmp, maxsample+tmp)
 
             # Emit across all channels
-            deltaf_arr = np.empty(pulse_len)
+            deltaf_arr = np.empty(sync_pulse_len)
             for emitclk in range(nodecount):
-                if self_emit and emitclk == curnode: # Skip selfemission
+                if ctrl.self_emit and emitclk == node: # Skip selfemission
                     continue
-                time_arr = (np.arange(minsample,maxsample) + clk_creation[curnode] )/p.f_samp 
-                deltaf_arr = np.exp( 2*pi*1j* (deltaf[curnode] - deltaf[emitclk])  *( time_arr))
+                time_arr = (np.arange(minsample,maxsample) + clk_creation[node] )/p.f_samp 
+                deltaf_arr = np.exp( 2*pi*1j* (deltaf[node] - deltaf[emitclk])  *( time_arr))
 
                 #Echoes management
                 for k in range(max_echo_taps):
-                    curr_amp = echo_amp[curnode][emitclk][k]
+                    curr_amp = echo_amp[node][emitclk][k]
                     if curr_amp != 0:
                         to_emit = analog_pulse*deltaf_arr
-                        channels[emitclk, spread + echo_delay[curnode][emitclk][k]] += to_emit*curr_amp
+                        channels[emitclk, spread + echo_delay[node][emitclk][k]] += to_emit*curr_amp
 
             # Set next event
-            wait_til_adjust[curnode] = math.floor(phi[curnode]*adjust_frac[curnode])
-            ordered_insert(wait_til_adjust[curnode]+cursample, curnode)
+            wait_til_adjust[node] = math.floor(phi[node]*adjust_frac[node])
+            ordered_insert(wait_til_adjust[node]+cursample, node)
 
-            emit[curnode] = False
+            emit[node] = False
 
 
 
@@ -271,45 +281,70 @@ def runsim(p,ctrl):
         # ----------------
         # Adjust phase
         else:
-            # ------
-            # Barycenter calculation
-            winmax = cursample
-            winmin = prev_adjustsample[curnode]
-            winlen = winmax-winmin
+            # Variable window length
+            if ctrl.var_winlen:
+                # Calculate winlen
+                winlen = nodes_winlen[node]
+                lothresh = int(round(ctrl.vw_lofactor*winlen))
+                hithresh = int(round(ctrl.vw_hifactor*winlen))
+                minlen = int(round(ctrl.vw_minsize*sync_pulse_len))
+                maxlen = int(round(cursample - prev_adjustsample[node]))
+                if prev_TO[node] < lothresh:
+                    winlen = max(int(round(winlen/ctrl.vw_lofactor)), minlen)
+                elif prev_TO[node] > hithresh:
+                    winlen = min(int(round(winlen*ctrl.vw_hifactor)), maxlen)
+                nodes_winlen[node] = winlen # Store computed winlen for later use
+                print(minlen)
+                
 
-            prev_adjustsample[curnode] = cursample
+                expected_loc = cursample - wait_til_adjust[node]
+                expected_loc += hd_correction[node] if ctrl.half_duplex else 0
+                winmax = int(round(expected_loc + math.ceil(winlen/2)))
+                winmin = int(round(expected_loc - math.floor(winlen/2)))
+                # If out of bounds, go back to full adjust length
+                if winmax > cursample or winmin < prev_adjustsample[node]:
+                    winmax = cursample
+                    winmin = prev_adjustsample[node]
 
-            # Block channel values when curnode emitted
-            if ctrl.half_duplex and ctrl.hd_block_during_emit:
-                channels[curnode, prev_emit_range[curnode]] = 0
+                winlen = winmax - winmin # Use real winlen for calculations if there was oob issue
 
-
-            if winlen > pulse_len + 1:
-                barycenter_range = range(winmin, winmax)
-                barypos, baryneg, corpos, corneg = calc_both_barycenters(p, channels[curnode,barycenter_range])
             else:
-                barypos = winlen - wait_til_adjust[curnode]
+                winmax = cursample
+                winmin = prev_adjustsample[node]
+                winlen = winmax-winmin
+
+            prev_adjustsample[node] = cursample
+
+            # Block channel values when node emitted
+            if ctrl.half_duplex and ctrl.hd_block_during_emit:
+                channels[node, prev_emit_range[node]] = 0
+
+
+            # Obtain barycenters
+            if winlen > sync_pulse_len + 1:
+                barycenter_range = range(winmin, winmax)
+                barypos, baryneg, corpos, corneg = calc_both_barycenters(p, channels[node,barycenter_range])
+            else:
+                barypos = winlen - wait_til_adjust[node]
                 baryneg = barypos
 
-
-
-            # -------
-            # TO correction
             bary_avg = int(round((barypos+baryneg)/2)) 
 
             # Offset with respect to emit time
-            TO = winmax - winlen + bary_avg - cursample + wait_til_adjust[curnode] 
+            TO = winmax - winlen + bary_avg - cursample + wait_til_adjust[node] 
             
             # Fix slot offset for 
             if ctrl.half_duplex:
-                TO += hd_correction[curnode]
+                TO += hd_correction[node]
 
             TO_correction = round(TO*epsilon_TO)
-            theta[curnode] += TO_correction
-            theta[curnode] = theta[curnode] % phi[curnode]
+            theta[node] += TO_correction
+            theta[node] = theta[node] % phi[node]
+
+            prev_TO[node] = TO
 
 
-            #------------------
+
             # CFO correction
             CFO = cfo_mapper_fct(barypos-baryneg, p)
             
@@ -318,62 +353,57 @@ def runsim(p,ctrl):
             if CFO_correction > max_CFO_correction:
                 CFO_correction = max_CFO_correction
             elif CFO_correction < -1*max_CFO_correction:
-                #CFO_maxjump_direction[curnode] *= -1
-                #CFO_correction = CFO_maxjump_direction[curnode]*max_CFO_correction
                 CFO_correction = -1*max_CFO_correction
 
             # Median filtering
-            #CFO_corr_list[curnode].append(CFO_correction)
-            #if len(CFO_corr_list[curnode]) > 3:
-            #    CFO_corr_list[curnode].pop(0)
-            #deltaf[curnode] += np.median(CFO_corr_list[curnode])
-
-
-            #CFO_correction += ctrl.cfo_bias*p.f_symb
+            #CFO_corr_list[node].append(CFO_correction)
+            #if len(CFO_corr_list[node]) > 3:
+            #    CFO_corr_list[node].pop(0)
+            #deltaf[node] += np.median(CFO_corr_list[node])
             
-            if wait_CFO_correction[curnode] <= CFO_step_wait:
-                wait_CFO_correction[curnode] += 1
+            if wait_CFO_correction[node] <= CFO_step_wait:
+                wait_CFO_correction[node] += 1
             else:
-                do_CFO_correction[curnode] = True
+                do_CFO_correction[node] = True
 
 
             # CFO correction moving average or regular average
-            if do_CFO_correction[curnode]:
-                CFO_corr_list[curnode].append(CFO_correction)
-                if len(CFO_corr_list[curnode]) >= CFO_processing_avgwindow:
-                    CFO_correction = sum(CFO_corr_list[curnode])/CFO_processing_avgwindow
-                    CFO_corr_list[curnode] = []
+            if do_CFO_correction[node]:
+                CFO_corr_list[node].append(CFO_correction)
+                if len(CFO_corr_list[node]) >= CFO_processing_avgwindow:
+                    CFO_correction = sum(CFO_corr_list[node])/CFO_processing_avgwindow
+                    CFO_corr_list[node] = []
                 elif CFO_processing_avgtype == 'reg': # Moving average applies CFO at each step
-                    do_CFO_correction[curnode] = False
+                    do_CFO_correction[node] = False
             
             
             # apply cfo correction if needed
-            if do_CFO_correction[curnode]:
-                deltaf[curnode] += CFO_correction
+            if do_CFO_correction[node]:
+                deltaf[node] += CFO_correction
 
-            # -------------------
+            # Bookeeping
             if ctrl.keep_intermediate_values:
-                sample_inter[curnode].append(cursample)
-                theta_inter[curnode].append(theta[curnode])
-                phi_inter[curnode].append(phi[curnode])
-                deltaf_inter[curnode].append(deltaf[curnode])
+                sample_inter[node].append(cursample)
+                theta_inter[node].append(theta[node])
+                phi_inter[node].append(phi[node])
+                deltaf_inter[node].append(deltaf[node])
 
 
 
             # --------
             # Set next event
-            wait_til_emit[curnode] = math.ceil(phi[curnode]*emit_frac[curnode])+cursample+TO_correction
-            if wait_til_emit[curnode] < 1:
-                wait_til_emit[curnode] = 1
+            wait_til_emit[node] = math.ceil(phi[node]*emit_frac[node])+cursample+TO_correction
+            if wait_til_emit[node] < 1:
+                wait_til_emit[node] = 1
 
-            ordered_insert(wait_til_emit[curnode], curnode)
-            emit[curnode] = True
+            ordered_insert(wait_til_emit[node], node)
+            emit[node] = True
 
 
         # ----------------
         # Fetch next event/clock
         cursample = queue_sample.pop(0)
-        curnode = queue_clk.pop(0)
+        node = queue_clk.pop(0)
 
 
 
