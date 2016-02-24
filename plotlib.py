@@ -55,7 +55,7 @@ def discrete(*args, repad_ratio=0.1):
     x_lims = [min(x)-x_pad, max(x)+x_pad]
     plt.plot(x_lims, [0,0], 'k-')
     plt.xlim(x_lims)
-    return fh
+    return fh, plt.gca()
 
 def continuous(*args, repad_ratio=0.1, label='curve0'):
     """Plots a continuous graph"""

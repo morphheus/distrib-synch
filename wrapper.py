@@ -86,18 +86,18 @@ def dec_wrap2():
 
 
     ctrl = SimControls()
-    ctrl.steps = 40 # Approx number of emissions per node
-    ctrl.basephi = 4000 # How many samples between emission
+    ctrl.steps = 60 # Approx number of emissions per node
+    ctrl.basephi = 6000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = True # Needed to draw graphs
-    ctrl.nodecount = 20 # Number of nodes
+    ctrl.nodecount = 10 # Number of nodes
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
 
-    ctrl.theta_bounds = [0,1] # In units of phi
+    ctrl.theta_bounds = [0.4,0.6] # In units of phi
     #ctrl.theta_bounds = [0.5,0.5] # In units of phi
     #ctrl.deltaf_bound = 3e-6
     ctrl.deltaf_bound = 0
-    ctrl.noise_std = 0
+    ctrl.noise_var = 1
     ctrl.rand_init = False
     ctrl.non_rand_seed = 192912341 # Only used if rand_init is False
     ctrl.max_echo_taps = 1 
@@ -114,10 +114,17 @@ def dec_wrap2():
     #ctrl.delay_fct = delay_pdf_exp
 
     ctrl.half_duplex = True
-    ctrl.hd_slot0 = 0.3 # in terms of phi
-    ctrl.hd_slot1 = 0.7 # in terms of phi
+    ctrl.hd_slot0 = 0.2 # in terms of phi
+    ctrl.hd_slot1 = 0.6 # in terms of phi
     ctrl.hd_block_during_emit = True
-    ctrl.hd_block_extrawidth = 0.2 # as a factor of offset (see runsim to know what is offset)
+    ctrl.hd_block_extrawidth = 2 # as a factor of offset (see runsim to know what is offset)
+
+    ctrl.var_winlen = True
+    ctrl.vw_minsize = 5 # as a factor of len(p.analog_sig)
+    ctrl.vw_lothreshold = 0.1 # winlen reduction threshold
+    ctrl.vw_hithreshold = 0.1 # winlen increase threshold
+    ctrl.vw_lofactor = 1.5 # winlen reduction factor
+    ctrl.vw_hifactor = 2 # winlen increase factor
     
     ctrl.saveall = True
 

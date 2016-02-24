@@ -55,8 +55,8 @@ def cplx_gaussian(shape, noise_variance):
     """The magnitude of the noise will have a variance of 'noise_variance'"""
     # If variance is equal to zero, numpy returns an error
     if noise_variance:
-        noise_variance /= 2**0.5 # Due to generating a cplx numbarr
-        x = (np.random.normal(size=shape, scale=noise_variance) + 1j*np.random.normal(size=shape, scale=noise_variance)).astype(CPLX_DTYPE)
+        noise_std = (noise_variance/2)**2 # Due to generating a cplx numbarr
+        x = (np.random.normal(size=shape, scale=noise_std) + 1j*np.random.normal(size=shape, scale=noise_std)).astype(CPLX_DTYPE)
     else:
         x = np.array([0+0j]*shape[0]*shape[1], dtype=CPLX_DTYPE).reshape(shape[0],-1)
     return x
@@ -138,7 +138,7 @@ def rrcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
 #--------------------
 def calc_snr(ctrl,p):
     """Calculates the SNR of the system provided"""
-    noise_variance = np.float64(ctrl.noise_std)**2
+    noise_variance = np.float64(ctrl.noise_var)
     signal_power = np.float64((np.sum(np.abs(p.analog_sig)))/len(p.analog_sig))**2
 
 
@@ -490,7 +490,6 @@ def match_decimate(signal, pulse, spacing, mode='same'):
     
     return decimated, decimated_start_index,  cross_correlation
 
-
 #--------------------
 def cfo_mapper_pass(barywidth, p):
     return 0
@@ -581,7 +580,7 @@ def delay_pdf_exp(ctrl):
     return delays, amp
 
 def build_delay_matrix(ctrl, delay_fct=delay_pdf_exp):
-    """Insert documentation here"""
+    """From the delay function, initiate an appropriately sized delay matrix"""
     # Note that PDF functions must be declared/imported BEFORE this function definition
 
     # ECHOES USAGE:
@@ -758,8 +757,8 @@ class SyncParams(Struct):
                                         analog_sig, \
                                         np.zeros(zerocount + self.TO + self.trans_delay)))
         
-            time_arr = (np.arange(len(analog_sig))+np.random.rand()*1000*len(analog_sig))*T
-            #time_arr = (np.arange(len(analog_sig)))*T
+            #time_arr = (np.arange(len(analog_sig))+np.random.rand()*1000*len(analog_sig))*T
+            time_arr = (np.arange(len(analog_sig)))*T
             CFO_arr = np.exp( 2*pi*1j*self.CFO*(time_arr - self.trans_delay))
             analog_sig = analog_sig*CFO_arr
 

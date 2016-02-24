@@ -27,7 +27,7 @@ class SimControls(lib.Struct):
         self.nodecount = 7
         self.basephi = 2000
         self.chansize = self.basephi*self.steps
-        self.noise_std = 0
+        self.noise_var = 0
         self.phi_bounds = [1,1]
         self.theta_bounds = [0,1]
         self.self_emit = False # IF set to False, the self-emit will just be skipped.
@@ -103,7 +103,6 @@ def runsim(p,ctrl):
     nodecount = ctrl.nodecount
     basephi = ctrl.basephi
     chansize = ctrl.chansize
-    noise_std = ctrl.noise_std
     CFO_step_wait = ctrl.CFO_step_wait
     epsilon_TO = ctrl.epsilon_TO
     epsilon_CFO = ctrl.epsilon_CFO
@@ -176,10 +175,11 @@ def runsim(p,ctrl):
         deltaf_inter = [[] for k in range(nodecount)]
 
     if ctrl.half_duplex:
-        emit_frac = np.array([ctrl.hd_slot0 if k==0 else ctrl.hd_slot1 for k in hd_sync_slot])
+        emit_frac = np.array([ctrl.hd_slot0 if k==0 else ctrl.hd_slot1 for k in hd_sync_slot], dtype=lib.FLOAT_DTYPE)
+        adjust_frac = np.array([ctrl.hd_slot0 if k==1 else ctrl.hd_slot1 for k in hd_sync_slot], dtype=lib.FLOAT_DTYPE)
     else:
-        np.array([1/2]*nodecount)
-    adjust_frac = 1-emit_frac;
+        emit_frac = np.array([1/2]*nodecount, dtype=lib.FLOAT_DTYPE)
+        adjust_frac = 1-emit_frac;
     
     hd_correction = np.round((emit_frac-adjust_frac)*basephi).astype(dtype=lib.INT_DTYPE)
     
@@ -191,7 +191,7 @@ def runsim(p,ctrl):
     theta = np.random.randint(theta_minmax[0],theta_minmax[1]+1, size=nodecount)
     deltaf = np.random.uniform(deltaf_minmax[0],deltaf_minmax[1], size=nodecount)
     clk_creation = np.random.randint(0,chansize, size=nodecount)
-    channels = lib.cplx_gaussian( [nodecount,chansize],noise_std) 
+    channels = lib.cplx_gaussian( [nodecount,chansize], ctrl.noise_var) 
 
     if not ctrl.rand_init:
         np.random.seed()
@@ -294,7 +294,6 @@ def runsim(p,ctrl):
                 elif prev_TO[node] > hithresh:
                     winlen = min(int(round(winlen*ctrl.vw_hifactor)), maxlen)
                 nodes_winlen[node] = winlen # Store computed winlen for later use
-                print(minlen)
                 
 
                 expected_loc = cursample - wait_til_adjust[node]
