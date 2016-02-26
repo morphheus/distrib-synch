@@ -22,8 +22,8 @@ FLOAT_DTYPE = 'float64'
 CPLX_DTYPE = 'complex128'
 INT_DTYPE = 'int64'
 
-crosscorr_fct = lambda f,g,mode: np.correlate(f,g,mode=mode)
 #crosscorr_fct = lambda f,g,mode: fftconvolve(g, f.conjugate(),mode=mode)
+crosscorr_fct = lambda f,g,mode: np.correlate(g,f,mode=mode)
 
 
 

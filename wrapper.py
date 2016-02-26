@@ -41,7 +41,7 @@ def dec_wrap1():
     ctrl.display = True
     ctrl.saveall = True
     ctrl.keep_intermediate_values = True
-    ctrl.nodecount = 3
+    ctrl.nodecount = 5
     ctrl.CFO_step_wait = 10
     ctrl.theta_bounds = [0,1]
     #ctrl.cfo_bias = 0.0008 # in terms of f_symb
@@ -135,9 +135,10 @@ def dec_wrap2():
     return p, ctrl
 
 #------------------------
-def main_thesis(p,ctrl):
+def main_thesis():
 
-    graphs.barywidth_wrap(p,ctrl, force_calculate=True); graphs.show(); exit()
+    p, ctrl = dec_wrap1()
+    #graphs.barywidth_wrap(p,ctrl, force_calculate=True); graphs.show(); exit()
     
     #graphs.crosscorr(p); graphs.show(); exit()
     #graphs.analog(p); graphs.show(); exit()
@@ -147,8 +148,9 @@ def main_thesis(p,ctrl):
     sim_object.show_plots = True
     sim_object.simulate()
 
-def main_interd(p,ctrl):
+def main_interd():
 
+    p, ctrl = dec_wrap2()
     sim_object = SimWrap(p, ctrl)
     sim_object.show_CFO = False
     sim_object.simulate()
@@ -166,19 +168,21 @@ class SimWrap(lib.Struct):
     
 
     def __init__(self, p, ctrl):
+        """Prepares ctrl & p for simulation"""
         self.add(p=p)
         self.add(ctrl=ctrl)
 
-    def simulate(self):
-        """Prepare the ctrl & p for simulation, then execute simulation"""
-        lib.barywidth_map(p, reach=ctrl.bmap_reach , scaling_fct=ctrl.bmap_scaling , force_calculate=self.force_calculate, disp=True)
+        lib.barywidth_map(self.p, reach=self.ctrl.bmap_reach , scaling_fct=self.ctrl.bmap_scaling , force_calculate=self.force_calculate, disp=True)
         if self.force_calculate:
             self.p.update()
             self.ctrl.update()
 
+    def simulate(self):
+        """Simulate and run post-sim stuff, such as graphs or output saving"""
+
         # Display SNR
         msg = ''
-        siglen_value = "{:.2f}".format(len(p.analog_sig)/ctrl.basephi)
+        siglen_value = "{:.2f}".format(len(self.p.analog_sig)/self.ctrl.basephi)
         if self.show_siglen: msg = 'Sync signal length: ' + siglen_value + ' basephi' + '    '
         if self.show_SNR: msg += "SNR : " + str(lib.calc_snr(self.ctrl,self.p)) + " dB"
 
@@ -198,9 +202,8 @@ class SimWrap(lib.Struct):
 
 
 if __name__ == '__main__':
-    p, ctrl = dec_wrap2()
-    #main_interd(p,ctrl)
-    main_interd(p,ctrl)
+    main_interd()
+    #main_thesis()
 
 
 
