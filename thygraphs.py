@@ -109,7 +109,6 @@ def loglikelihood_fct_CFO(p, t0,l0, deltaf_range, var_w=1):
     loglike = -M*np.log(pi*var_w) - 1/(2*var_w) * diff_magnitude
     return loglike
 
-# loglikelihood with static theta -> ll as fct of CFO only -> plot that
 
 def ml_thy_3d():
 

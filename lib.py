@@ -23,7 +23,7 @@ CPLX_DTYPE = 'complex128'
 INT_DTYPE = 'int64'
 
 crosscorr_fct = lambda f,g,mode: np.correlate(f,g,mode=mode)
-crosscorr_fct = lambda f,g,mode: fftconvolve(g, f.conjugate(),mode=mode)
+#crosscorr_fct = lambda f,g,mode: fftconvolve(g, f.conjugate(),mode=mode)
 
 
 
@@ -631,7 +631,6 @@ class Struct:
 class SyncParams(Struct):
     """Parameter struct containing all the parameters used for the simulation, from the generation of the modulated training sequence to the exponent of the cross-correlation"""
 
-    #------------------------------------
     def __init__(self):
         self.plen = 101 # Note: must be odd
         self.rolloff = 0.1
@@ -654,8 +653,6 @@ class SyncParams(Struct):
         self.central_padding = 0 # As a fraction of zpos length
         self.ma_window = 1
 
-
-    #------------------------------------
     def build_training_sequence(self):
         """Builds training sequence from current parameters"""
 
@@ -685,8 +682,6 @@ class SyncParams(Struct):
         self.add(zpos=zpos)
         self.add(training_seq=training_seq)
 
-
-    #------------------------------------
     def calc_base_barywidth(self):
         """Calculates the barycenter width of the given parameters"""
         """ASSUMPTION: spacing_factor = 2"""
@@ -727,8 +722,6 @@ class SyncParams(Struct):
         self.add(baryslope=slope)
         self.init_basewidth = True
 
-
-    #------------------------------------
     def build_pulse(self):
         """Builds pulse from current parameters"""
         if self.pulse_type == 'raisedcosine':
@@ -741,8 +734,6 @@ class SyncParams(Struct):
         self.add(pulse_times=time)
         self.add(pulse=pulse)
 
-
-    #------------------------------------
     def build_analog_sig(self):
         """Pulses-shapes the training sequence. Must run build_pulse and build_training_sequence first"""
         T = 1/self.f_samp
@@ -776,8 +767,6 @@ class SyncParams(Struct):
         self.add(analog_zpos=analog_zpos)
         self.add(analog_zneg=analog_zneg)
 
-
-    #------------------------------------
     def update(self):
         """Updates dependent variables with current variables"""
         self.build_pulse()

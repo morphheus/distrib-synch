@@ -35,7 +35,7 @@ def remove_zeropad(x,y,repad_ratio):
     outy = y[lo:(hi+1)]
     return outx,outy
 
-def discrete(*args, repad_ratio=0.1):
+def discrete(*args, axes=None):
     """Plots a discrete graph with vertical bars"""
     if len(args) < 1 and len(args) > 2:
         raise Exception("Too many or too little inputs")
@@ -46,18 +46,21 @@ def discrete(*args, repad_ratio=0.1):
         y = args[0]
         x = np.arange(len(y))
 
-    fh = plt.figure()
+    if axes == None:
+        ax = plt.axes()
+    else:
+        ax = axes
 
-    plt.plot((x, x) , (y, np.zeros(len(y))), 'k-')
+    ax.plot((x, x) , (y, np.zeros(len(y))), 'k-')
 
     # Pad the limits so we always see the leftmost-rightmost point
     x_pad = (x[1]-x[0])
     x_lims = [min(x)-x_pad, max(x)+x_pad]
-    plt.plot(x_lims, [0,0], 'k-')
-    plt.xlim(x_lims)
-    return fh, plt.gca()
+    ax.plot(x_lims, [0,0], 'k-')
+    ax.set_xlim(x_lims)
+    return ax
 
-def continuous(*args, repad_ratio=0.1, label='curve0'):
+def continuous(*args, label='curve0', axes=None):
     """Plots a continuous graph"""
     if len(args) < 1 and len(args) > 2:
         raise Exception("Too many or too little inputs")
@@ -68,16 +71,18 @@ def continuous(*args, repad_ratio=0.1, label='curve0'):
         y = args[0]
         x = np.arange(len(y))
 
-    
+    if axes == None:
+        ax = plt.axes()
+    else:
+        ax = axes
 
-    fh = plt.figure()
-    lh = plt.plot(x, y, 'k-', label=label)
+    lh = ax.plot(x, y, 'k-', label=label)
     #plt.scatter(x, y, marker='.')
     #plt.plot(indep_ax,curve,'k-')
     x_lims = [min(x), max(x)]
-    plt.xlim(x_lims)
+    ax.set_xlim(x_lims)
 
-    return fh
+    return ax
 
 def surface3d(x,y,z, density=20, **kwargs):
     """3d plot of the x, y vectors and z 2d array"""
@@ -131,10 +136,8 @@ def post_sim_graphs(simwrap):
     hair(ctrl.sample_inter , ctrl.theta_inter , y_label='TO', savename='lastTO'); 
     if simwrap.show_TO: show()
 
-def barywidth(*args, savename='', fit_type='linear', residuals=False, **kwargs):
+def barywidth(*args, axes=None, savename='', fit_type='order2', residuals=True, disp=True, **kwargs):
     """Accepts either a SyncParams() object or two iterables representing the CFO and the barywidth"""
-
-
     if len(args) == 1 and type(args[0]).__name__ == 'SyncParams':
         CFO, barywidths = barywidth_map(args[0], **kwargs)
         f_symb = args[0].f_symb
@@ -146,16 +149,46 @@ def barywidth(*args, savename='', fit_type='linear', residuals=False, **kwargs):
     else:
         print("Invalid input")
 
+    # Axis specification shenanigans
+    if axes is None:
+        fh = plt.figure()
+        if residuals:
+            main_axes_loc = [.13,.3,.8,.6] 
+        else:
+            main_axes_loc = [.13,.11,.8,.8] 
+        ax = fh.add_axes(main_axes_loc)
+        make_rax = True if residuals else False
+    else:
+        make_rax = False
+        typename = type(axes).__name__
+        # Only one axes object given
+        if typename in ['Axes', 'AxesSubplot']:
+            ax = axes
+            if residuals:
+                warnings.warn('No residuals plotted; not enough axes')
+                residuals = False
+        # Input checking
+        elif len(axes) > 2:
+            raise('Too many axes specified')
+        # If only 1 ax is given
+        elif len(axes) == 1:
+            ax = axes
+            if residuals:
+                warnings.warn('No residuals plotted; not enough axes')
+                residuals = False
+        # If two axes given
+        elif len(axes) == 2:
+            ax = axes[0]
+            rax = axes[1]
+            if not residuals: warnings.warn('Specified a residuals axis, but residuals option False')
+
+    
     x = CFO/f_symb
     y = barywidths
-    
-    fh = plt.figure()
-    main_axes_loc = [.13,.3,.8,.6] 
-    frame1 = fh.add_axes(main_axes_loc)
 
-    lh = plt.plot(x, y, 'k-', label='Barycenter width')
+    lh = ax.plot(x, y, 'k-', label='Barycenter width')
     x_lims = [min(x), max(x)]
-    plt.plot((0,0), (min(y),max(y)))
+    ax.plot((0,0), (min(y),max(y)))
 
     fit_curve = None
     if fit_type == 'linear':
@@ -164,16 +197,16 @@ def barywidth(*args, savename='', fit_type='linear', residuals=False, **kwargs):
         fit[0] = args[0].baryslope*f_symb
         fit[1] = args[0].basewidth
         fit_curve = fit[0]*x + fit[1]
-        plt.plot(x, fit_curve, label='Linear fit')
+        ax.plot(x, fit_curve, label='Linear fit')
     elif fit_type == 'order2':
         # parabola fit display
         fit = args[0].order2fit
         fit_curve = fit[0]*CFO**2 + fit[1]*CFO**1 + args[0].basewidth#fit[2]
-        plt.plot(x, fit_curve, label='Order2 fit')
+        ax.plot(x, fit_curve, label='Order2 fit')
     elif fit_type == 'logistic':
         coeffs = args[0].logisticfit
         fit_curve = lib.logistic(CFO, coeffs) + args[0].basewidth
-        plt.plot(x, fit_curve, label='Logistic fit')
+        ax.plot(x, fit_curve, label='Logistic fit')
     elif fit_type == 'none':
         pass
     else:
@@ -181,33 +214,40 @@ def barywidth(*args, savename='', fit_type='linear', residuals=False, **kwargs):
     
 
     xlabel = 'CFO (f_symb)'
-    plt.xlabel(xlabel)
-    plt.ylabel('Barycenter width')
-    plt.xlim(x_lims)
-    plt.legend()
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel('Barycenter width')
+    ax.set_xlim(x_lims)
+    ax.legend()
 
     # Plotting residuals
+    if make_rax:
+        residuals_loc = [main_axes_loc[0],.1,.8,0]
+        residuals_loc[3] = main_axes_loc[1]-residuals_loc[1]-0.005
+        rax = fh.add_axes(residuals_loc) 
+        ax.set_xticklabels([]) 
+
     if fit_curve is not None and residuals:
         residuals_vals = fit_curve - barywidths
         residuals_curve = residuals_vals/np.std(residuals_vals)
-        frame1.set_xticklabels([]) 
 
-        residuals_loc = [main_axes_loc[0],.1,.8,0]
-        residuals_loc[3] = main_axes_loc[1]-residuals_loc[1]-0.005
-        frame2 = fh.add_axes(residuals_loc) 
-        plt.plot((x[0],x[-1]),(0,0), 'k-')
-        plt.plot(x,residuals_curve)
-        frame2.yaxis.set_ticks((-1,1))
-        plt.ylabel('\sigma')
-        plt.xlabel(xlabel)
-        plt.xlim(x_lims)
+        rax.plot((x[0],x[-1]),(0,0), 'k-')
+        rax.plot(x,residuals_curve)
+        rax.yaxis.set_ticks((-1,1))
+        rax.set_ylabel('\sigma')
+        rax.set_xlabel(xlabel)
+        rax.set_xlim(x_lims)
+        rax.set_ylim([-1.7,1.7])
         msg = "Total error: " + str(np.abs(residuals_vals).sum())
-        print(msg)
+        if disp: print(msg)
     
 
     save(savename)
+    if axes is None:
+        return fh
 
-def crosscorr(p, savename='', is_zpos=True):
+def barywidth_wrap(p,ctrl, **kwargs):
+    return barywidth(p, reach=ctrl.bmap_reach , scaling_fct=ctrl.bmap_scaling, **kwargs)
+def crosscorr(p, axes=None, savename='', is_zpos=True):
     """Builds a crosscorrelation graph from the crosscorrelation with zpos (default)
     Accepted input:
     (<class 'Params'>)      will plot the crosscorrelation with the analog signal 
@@ -217,7 +257,7 @@ def crosscorr(p, savename='', is_zpos=True):
     p.full_sim = False
     p.bias_removal = False
 
-    _, _, rpos, rneg = calc_both_barycenters(p, mode='Full')
+    _, _, rpos, rneg = calc_both_barycenters(p, mode='full')
     p.full_sim = tmp_full_sim # Restore entrance value
     p.bias_removal = tmp_bias # Restore entrance value
 
@@ -232,59 +272,63 @@ def crosscorr(p, savename='', is_zpos=True):
     _ , y = remove_zeropad(x,y, repad_ratio=0.05)
 
     x = np.arange(len(y)) - int(math.floor(len(y)/2))
-    continuous(x,y, label=label)
-    plt.xlabel('l')
-    plt.ylabel('|r[l]|')
-    if label is not None: plt.legend()
+    ax = continuous(x,y, axes=axes, label=label)
+    ax.set_xlabel('l')
+    ax.set_ylabel('|r[l]|')
+    if label is not None: ax.legend()
 
     save(savename)
     return x, y, rpos, rneg
 
-def crosscorr_zneg(p, savename=''):
+def crosscorr_zneg(p, axes=None, savename=''):
     """Same as crosscorr, but with zneg instead"""
-    crosscorr(p, savename=savename, is_zpos=False)
+    crosscorr(p, axes=axes, savename=savename, is_zpos=False)
 
-def crosscorr_both(p, savename=''):
+def crosscorr_both(p, axes=None, savename=''):
     """Builds a crosscorrelation graph from the crosscorrelation of both zpos and zneg
     Accepted input:
     (<class 'SyncParams'>)      will plot the crosscorrelation with the analog signal 
     """
     tmp = p.full_sim # Save temporary fullsim value
+    tmp_bias = p.bias_removal # Save temporary biasremoval value
     p.full_sim = False
+    p.bias_removal = False
 
-    _, _, rpos, rneg = calc_both_barycenters(p,mode='same')
+    _, _, rpos, rneg = calc_both_barycenters(p,mode='full')
     p.full_sim = tmp # Restore entrance value
+    p.bias_removal = tmp_bias
 
     x = np.arange(len(rpos))
     # Only plot the non-zero interval
-    _ , y0 = remove_zeropad(x,rpos, repad_ratio=0.05)
-    _ , y1 = remove_zeropad(x,rneg, repad_ratio=0.05)
-
+    #_ , y0 = remove_zeropad(x,rpos, repad_ratio=0.05)
+    #_ , y1 = remove_zeropad(x,rneg, repad_ratio=0.05)
+    y0 = rpos
+    y1 = rneg
     x = np.arange(len(y0)) - int(math.floor(len(y0)/2))
 
-    continuous(x,y0, label='Leading')
-    plt.plot(x, y1, label='Trailing')
+    ax = continuous(x,y0, axes=axes, label='Leading')
+    ax.plot(x, y1, label='Trailing')
 
-    plt.xlabel('l')
-    plt.ylabel('|r[l]|')
+    ax.set_xlabel('l')
+    ax.set_ylabel('|r[l]|')
 
-    plt.legend()
-
+    ax.legend()
     save(savename)
+    return ax
 
-def analog(p, savename=''):
+def analog(p, axes=None, savename=''):
     y = abs(p.analog_sig)
     x = np.arange(len(y)) - math.floor(len(y)/2)
 
-    fh = discrete(x,y)
+    ax = discrete(x,y, axes=axes)
     
-    plt.xlabel('n')
-    plt.ylabel('|x(n)|')
+    ax.set_xlabel('n')
+    ax.set_ylabel('|x(n)|')
     
     save(savename)
-    return fh
+    return ax
 
-def analog_zpos(p, savename=''):
+def analog_zpos(p,axes=None, savename=''):
     
     
     y = abs(p.analog_zpos)
@@ -299,13 +343,13 @@ def analog_zpos(p, savename=''):
     
     return fh
 
-def pulse(p,savename=''):
+def pulse(p, axes=None, savename=''):
     
     y = np.real(p.pulse)
     x = np.arange(len(y)) - len(y)/2 + 0.5
 
 
-    discrete(x,y)
+    discrete(x,y, axes=axes)
 
     plt.xlabel('n (samples)')
     plt.ylabel('p[n])')
@@ -314,4 +358,66 @@ def pulse(p,savename=''):
     return x,y
 
 
-# -- THEORY GRAPHS SECTION
+#----------------
+def cat_graphs(graphs, rows=2,subplotsize=(9,5), savename=''):
+    """Concatenate the figures together together
+    graphlist: list of tuples of (fct name, args, kwarg)"""
+    
+    # Make sure lst is a list, indep of input.
+    if type(graphs) is tuple:
+        lst = [graphs.copy]
+    elif type(graphs) is list:
+        lst = graphs.copy()
+    else:
+        raise ValueError("Expected first argument to be a tuple or list. Currently is: " + str(type(graphs)))
+
+    spcount = len(lst) # Subplotcount
+    spargs = (rows, (spcount+1)//2) # Premade argument for rows-cols in add_subplots
+    figsize = (spargs[1]*subplotsize[0], spargs[0]*subplotsize[1])
+    fig = plt.figure(figsize=figsize)
+    
+
+    # Build axes and draw in them
+    for k, tpl in enumerate(lst):
+        # Break down the tuple if needed
+        fct = tpl[0]
+        fargs = tpl[1] if len(tpl) > 1 else tuple()
+        fkwargs = tpl[2] if len(tpl) > 2 else dict()
+        if len(tpl) > 3: raise ValueError('Input list element is a length ' + len(tpl) + 'iterable')
+        # Build and populate axes
+        ax = fig.add_subplot(*spargs, k+1)
+        fkwargs['axes'] = ax
+        fct(*fargs, **fkwargs)
+
+        #Make axes title
+        try:
+            ax.set_title(fkwargs['sb_title'])
+        except KeyError:
+            ax.set_title(fct.__name__)
+
+    # Finalize figure
+    fig.tight_layout()
+    save(savename)
+
+def all_graphs(p,ctrl=None):
+    
+    glist = []
+    glist.append((crosscorr_zneg, [p]))
+    glist.append((analog, [p]))
+    glist.append((pulse, [p]))
+
+    # CTRL dependent graphs
+    if ctrl is not None:
+        glist.append((barywidth,
+                        [p],
+                        dict(axes=None, fit_type='linear', reach=ctrl.bmap_reach , scaling_fct=ctrl.bmap_scaling, residuals=False, force_calculate=False, disp=False)
+                        ))
+
+    cat_graphs(glist)
+
+# End
+
+
+
+
+

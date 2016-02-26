@@ -6,6 +6,8 @@ import plotlib as graphs
 import os
 import lib
 import numpy as np
+import warnings
+
 
 from sim_channel import runsim, SimControls
 
@@ -93,11 +95,11 @@ def dec_wrap2():
     ctrl.nodecount = 10 # Number of nodes
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
 
-    ctrl.theta_bounds = [0.4,0.6] # In units of phi
+    ctrl.theta_bounds = [0,0] # In units of phi
     #ctrl.theta_bounds = [0.5,0.5] # In units of phi
     #ctrl.deltaf_bound = 3e-6
     ctrl.deltaf_bound = 0
-    ctrl.noise_var = 1
+    ctrl.noise_var = 0
     ctrl.rand_init = False
     ctrl.non_rand_seed = 192912341 # Only used if rand_init is False
     ctrl.max_echo_taps = 1 
@@ -113,13 +115,13 @@ def dec_wrap2():
     #ctrl.delay_sigma = 0.001 # Standard deviation used for the generator delay function
     #ctrl.delay_fct = delay_pdf_exp
 
-    ctrl.half_duplex = True
-    ctrl.hd_slot0 = 0.2 # in terms of phi
-    ctrl.hd_slot1 = 0.6 # in terms of phi
+    ctrl.half_duplex = False
+    ctrl.hd_slot0 = 0.5 # in terms of phi
+    ctrl.hd_slot1 = 0.5 # in terms of phi
     ctrl.hd_block_during_emit = True
     ctrl.hd_block_extrawidth = 2 # as a factor of offset (see runsim to know what is offset)
 
-    ctrl.var_winlen = True
+    ctrl.var_winlen = False
     ctrl.vw_minsize = 5 # as a factor of len(p.analog_sig)
     ctrl.vw_lothreshold = 0.1 # winlen reduction threshold
     ctrl.vw_hithreshold = 0.1 # winlen increase threshold
@@ -134,17 +136,18 @@ def dec_wrap2():
 
 #------------------------
 def main_thesis(p,ctrl):
-    graphs.barywidth(p, fit_type='linear', reach=ctrl.bmap_reach , scaling_fct=ctrl.bmap_scaling, residuals=True, force_calculate=False ); graphs.show(); exit()
 
+    graphs.barywidth_wrap(p,ctrl, force_calculate=True); graphs.show(); exit()
+    
+    #graphs.crosscorr(p); graphs.show(); exit()
+    #graphs.analog(p); graphs.show(); exit()
+    #graphs.pulse(p); graphs.show(); exit()
 
     sim_object = SimWrap(p, ctrl)
     sim_object.show_plots = True
     sim_object.simulate()
 
 def main_interd(p,ctrl):
-    #graphs.crosscorr(p); graphs.show(); exit()
-    #graphs.analog(p); graphs.show(); exit()
-    #graphs.pulse(p); graphs.show(); exit()
 
     sim_object = SimWrap(p, ctrl)
     sim_object.show_CFO = False
@@ -196,8 +199,8 @@ class SimWrap(lib.Struct):
 
 if __name__ == '__main__':
     p, ctrl = dec_wrap2()
+    #main_interd(p,ctrl)
     main_interd(p,ctrl)
-    #main_thesis(p,ctrl)
 
 
 
