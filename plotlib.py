@@ -112,14 +112,15 @@ def hair(samples,param, y_label='Parameter', savename=''):
     # Param:  <param>_inter output from the simulation
 
     fh = plt.figure()
-    for flist, plist in zip(samples,param):
-        plt.plot(flist,plist, 'k-')
+    ax = plt.axes()
+    for slist, plist in zip(samples,param):
+        ax.plot(np.array(slist),np.array(plist), 'k-')
 
-    xmin = max([x[0] for x in samples])
+    xmin = 0
     xmax = max([x[-1] for x in samples])
-    plt.xlim([xmin,xmax])
-    plt.xlabel('Sample')
-    plt.ylabel(y_label)
+    ax.set_xlim([xmin,xmax])
+    ax.set_xlabel('Sample')
+    ax.set_ylabel(y_label)
 
     save(savename)
     return fh

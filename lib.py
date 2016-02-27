@@ -392,16 +392,13 @@ def calc_both_barycenters(p, *args,mode='valid'):
 
 
     # Single ZC handling
-    if p.train_type == 'singledecimate':
+    if p.crosscorr_fct == 'match_decimate':
         decimated_signal, start_index, _ = match_decimate(g, p.pulse, p.spacing)
         crosscorrpos = np.abs(crosscorr_fct(p.training_seq, decimated_signal, 'same'))
         barypos = start_index + p.spacing*np.argmax(crosscorrpos)
         return barypos, barypos, crosscorrpos, crosscorrpos
-
-    
-
-    # Multi zc handiling
-    if p.crosscorr_fct == 'zeropadded':
+    # Multi ZC handling
+    elif p.crosscorr_fct == 'zeropadded':
         f1 = p.pad_zpos
         f2 = p.pad_zneg
     elif p.crosscorr_fct == 'analog':
@@ -412,7 +409,6 @@ def calc_both_barycenters(p, *args,mode='valid'):
     
     barypos, crosscorrpos =barycenter_correlation(f1 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode, ma_window=p.ma_window) 
     baryneg, crosscorrneg =barycenter_correlation(f2 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode, ma_window=p.ma_window) 
-
 
     return barypos, baryneg, crosscorrpos, crosscorrneg
 
@@ -539,7 +535,7 @@ def cfo_mapper_step_sin(barywidth, p):
     return none
 
 #--------------------
-def delay_pd_gaussian():
+def delay_pdf_gaussian():
     pass
 
 def delay_pdf_static(ctrl):
@@ -607,6 +603,8 @@ def build_delay_matrix(ctrl, delay_fct=delay_pdf_exp):
     ctrl.echo_amp = echoes['amp']
 
 #--------------------
+
+#--------------------
 def build_timestamp_id():
     """Builds a timestamp, and appens a random 3 digit number after it"""
     return db.build_timestamp_id()
@@ -671,7 +669,7 @@ class SyncParams(Struct):
             training_seq = cosine_zadoff_overlap(1, self.zc_len)
 
         # A single ZC
-        elif self.train_type == 'singledecimate':
+        elif self.train_type == 'single':
             training_seq = zpos.copy()
 
         # Wrong train_type

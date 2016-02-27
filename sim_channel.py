@@ -30,6 +30,7 @@ class SimControls(lib.Struct):
         self.noise_var = 0
         self.phi_bounds = [1,1]
         self.theta_bounds = [0,1]
+        self.max_start_delay = 0 # In factor of basephi
         self.self_emit = False # IF set to False, the self-emit will just be skipped.
         self.CFO_step_wait = 60
         self.rand_init = False
@@ -40,6 +41,8 @@ class SimControls(lib.Struct):
         self.bmap_reach = 3e-1
         self.bmap_scaling = 100
         self.non_rand_seed = 1231231
+        # Node behaviours
+        self.static_nodes = 0 # Static nodes do not adjust
         # Echo controls
         self.max_echo_taps = 4
         self.min_delay = 0
@@ -76,10 +79,22 @@ class SimControls(lib.Struct):
         self.phi_minmax = [round(x*self.basephi) for x in self.phi_bounds]
         self.theta_minmax = [round(x*self.basephi) for x in self.theta_bounds]
         lib.build_delay_matrix(self, delay_fct=self.delay_fct);
+
+        # Input protection
+        val_within_bounds(self.max_start_delay, [0,float('inf')] , 'max_start_delay')
+        val_within_bounds(self.hd_slot0, [0,1] , 'hd_slot0')
+        val_within_bounds(self.hd_slot1, [0,1] , 'hd_slot1')
+        
+
+        
         self.init_update = True
 
+def val_within_bounds(val, bounds, name):
+    if val < bounds[0] or val > bounds[1]:
+        bstr = list(map(str,bounds))
+        except_msg = bstr[0] + ' <= ' + name + ' <= ' + bstr[1] + ' is unsatisfied'
+        raise ValueError(except_msg)
 
-#-------------------------
 def ordered_insert(sample, clknum):
     """Insert from the left in descending order, in a list"""
     global queue_sample, queue_clk
@@ -87,8 +102,6 @@ def ordered_insert(sample, clknum):
     idx = bisect.bisect(queue_sample, sample)
     queue_sample.insert(idx, sample)
     queue_clk.insert(idx, clknum)
-
-
 
 #-------------------------
 def runsim(p,ctrl):
@@ -156,6 +169,7 @@ def runsim(p,ctrl):
     deltaf_minmax = np.array([-1*ctrl.deltaf_bound,ctrl.deltaf_bound])*p.f_symb
     do_CFO_correction = np.array([False]*nodecount)
     wait_CFO_correction = np.zeros(nodecount)
+    wait_adjust = np.zeros(nodecount)
     CFO_maxjump_direction = np.ones(nodecount)
     CFO_corr_list = [[] for x in range(nodecount)]
     TO_corr_list = [[] for x in range(nodecount)]
@@ -165,8 +179,10 @@ def runsim(p,ctrl):
     prev_emit_range = [None for x in range(nodecount)]
     prev_TO = np.array([float('inf')]*nodecount, dtype=lib.FLOAT_DTYPE)
     nodes_winlen = np.array([ctrl.chansize]*nodecount, dtype=lib.INT_DTYPE)
-    emit = np.array([True]*nodecount)
+    next_event = ['emit']*nodecount
     hd_sync_slot = np.array([0 if k%2 else 1 for k in range(nodecount)])
+    nodetype = ['static']*ctrl.static_nodes + ['variable'] * (nodecount-ctrl.static_nodes)
+
 
     if ctrl.keep_intermediate_values:
         sample_inter = [[] for k in range(nodecount)]
@@ -183,7 +199,7 @@ def runsim(p,ctrl):
     
     hd_correction = np.round((emit_frac-adjust_frac)*basephi).astype(dtype=lib.INT_DTYPE)
     
-    # Node initial values
+    # Node initial values (drop)
     if not ctrl.rand_init:
         np.random.seed(ctrl.non_rand_seed)
     
@@ -192,6 +208,13 @@ def runsim(p,ctrl):
     deltaf = np.random.uniform(deltaf_minmax[0],deltaf_minmax[1], size=nodecount)
     clk_creation = np.random.randint(0,chansize, size=nodecount)
     channels = lib.cplx_gaussian( [nodecount,chansize], ctrl.noise_var) 
+
+    max_start_sample = int(round(ctrl.max_start_delay*basephi))
+    if max_start_sample:
+        start_delay = np.random.randint(0, max_start_sample, size=nodecount)
+    else:
+        start_delay = np.zeros(nodecount, dtype=lib.INT_DTYPE)
+        
 
     if not ctrl.rand_init:
         np.random.seed()
@@ -213,25 +236,24 @@ def runsim(p,ctrl):
         print('Theta std init: ' + str(np.std(theta)))
         print('deltaf std init: ' + str(np.std(deltaf)) + '    spread: '+ str(max(deltaf) -min(deltaf))+ '\n')
 
-    if ctrl.keep_intermediate_values:
-        for k in range(nodecount):
-            sample_inter[k].append(theta[k])
-            theta_inter[k].append(theta[k])
-            phi_inter[k].append(phi[k])
-            deltaf_inter[k].append(deltaf[k])
 
 
 
     # First event happens based on initial phase shift
     for clk, sample in enumerate(theta):
         prev_adjustsample[clk] = sample - phi[clk] + phi_minmax[1]
-        if emit[clk]:
-            first_event = int(round(emit_frac[clk]*phi[clk]))
+        if next_event[clk]:
+            first_event = int(round(emit_frac[clk]*phi[clk])) + start_delay[clk]
         else:
-            first_event = phi[clk]
+            first_event = phi[clk]+ start_delay[clk]
             
-        ordered_insert(prev_adjustsample[clk]+first_event,clk) 
+        if ctrl.keep_intermediate_values:
+            sample_inter[clk].append(first_event)
+            theta_inter[clk].append(theta[clk])
+            phi_inter[clk].append(phi[clk])
+            deltaf_inter[clk].append(deltaf[clk])
 
+        ordered_insert(prev_adjustsample[clk]+first_event,clk) 
 
 
 
@@ -244,7 +266,7 @@ def runsim(p,ctrl):
 
         # ----------------
         # Emit phase
-        if emit[node]:
+        if next_event[node] == 'emit':
             minsample = cursample-offset
             maxsample = cursample+offset+1
             spread = range(minsample,maxsample)
@@ -269,10 +291,20 @@ def runsim(p,ctrl):
                         channels[emitclk, spread + echo_delay[node][emitclk][k]] += to_emit*curr_amp
 
             # Set next event
-            wait_til_adjust[node] = math.floor(phi[node]*adjust_frac[node])
-            ordered_insert(wait_til_adjust[node]+cursample, node)
+            if nodetype[node] == 'variable':
+                wait_til_adjust[node] = math.floor(phi[node]*adjust_frac[node])
+                ordered_insert(wait_til_adjust[node]+cursample, node)
 
-            emit[node] = False
+                next_event[node] = 'adjust'
+            elif nodetype[node] == 'static':
+                if ctrl.keep_intermediate_values:
+                    sample_inter[node].append(cursample)
+                    theta_inter[node].append(theta[node])
+                    phi_inter[node].append(phi[node])
+                    deltaf_inter[node].append(deltaf[node])
+                ordered_insert(phi[node]+cursample, node)
+
+
 
 
 
@@ -280,7 +312,7 @@ def runsim(p,ctrl):
 
         # ----------------
         # Adjust phase
-        else:
+        elif next_event[node] == 'adjust':
             # Variable window length
             if ctrl.var_winlen:
                 # Calculate winlen
@@ -396,11 +428,11 @@ def runsim(p,ctrl):
                 wait_til_emit[node] = 1
 
             ordered_insert(wait_til_emit[node], node)
-            emit[node] = True
+            next_event[node] = 'emit'
 
 
         # ----------------
-        # Fetch next event/clock
+        # Fetch next event/node
         cursample = queue_sample.pop(0)
         node = queue_clk.pop(0)
 

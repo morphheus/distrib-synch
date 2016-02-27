@@ -38,6 +38,7 @@ def dec_wrap1():
     ctrl = SimControls()
     ctrl.steps = 40
     ctrl.basephi = 4000
+    ctrl.max_start_delay = 10 # In factor of basephi
     ctrl.display = True
     ctrl.saveall = True
     ctrl.keep_intermediate_values = True
@@ -79,8 +80,8 @@ def dec_wrap2():
     p.full_sim = True
     p.bias_removal = True
     p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
-    p.train_type = 'singledecimate' # Type of training sequence
-    p.crosscorr_fct = 'analog' # Only important when not using 'singledecimate' train type
+    p.train_type = 'single' # Type of training sequence
+    p.crosscorr_fct = 'match_decimate' 
     #p.pulse_type = 'raisedcosine'
     p.pulse_type = 'rootraisedcosine'
     p.central_padding = 0 # As a fraction of zpos length
@@ -92,10 +93,12 @@ def dec_wrap2():
     ctrl.basephi = 6000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = True # Needed to draw graphs
-    ctrl.nodecount = 10 # Number of nodes
+    ctrl.nodecount = 3 # Number of nodes
+    ctrl.static_nodes = 1
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
+    ctrl.max_start_delay = 10 # In factor of basephi
 
-    ctrl.theta_bounds = [0,0] # In units of phi
+    ctrl.theta_bounds = [0.3,0.7] # In units of phi
     #ctrl.theta_bounds = [0.5,0.5] # In units of phi
     #ctrl.deltaf_bound = 3e-6
     ctrl.deltaf_bound = 0
@@ -113,11 +116,11 @@ def dec_wrap2():
     ctrl.max_CFO_correction = 1e-6 # As a factor of f_symb
     #ctrl.min_delay = 0.02 # in terms of basephi
     #ctrl.delay_sigma = 0.001 # Standard deviation used for the generator delay function
-    #ctrl.delay_fct = delay_pdf_exp
+    #ctrl.delay_fct = lib.delay_pdf_exp
 
-    ctrl.half_duplex = False
-    ctrl.hd_slot0 = 0.5 # in terms of phi
-    ctrl.hd_slot1 = 0.5 # in terms of phi
+    ctrl.half_duplex = True
+    ctrl.hd_slot0 = 0.3 # in terms of phi
+    ctrl.hd_slot1 = 0.7 # in terms of phi
     ctrl.hd_block_during_emit = True
     ctrl.hd_block_extrawidth = 2 # as a factor of offset (see runsim to know what is offset)
 
