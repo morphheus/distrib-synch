@@ -534,7 +534,6 @@ def cfo_mapper_step_sin(barywidth, p):
 
     return none
 
-#--------------------
 def delay_pdf_gaussian():
     pass
 
@@ -603,6 +602,79 @@ def build_delay_matrix(ctrl, delay_fct=delay_pdf_exp):
     ctrl.echo_amp = echoes['amp']
 
 #--------------------
+def buildx(TO,CFO, p):
+    """Builds a new x vector with appropriate TO and CFO"""
+    p.TO = TO
+    p.CFO = CFO
+    p.update()
+    return p.analog_sig.copy()
+
+def loglikelihood_fct(p,t0,l0, theta_range, deltaf_range, var_w=10):
+    """loglikelihood function over the range given by theta_range, deltaf_range, around initial values t0 and l0
+    output shape: theta x deltaf array
+    """
+
+    y = buildx(t0, l0,p)
+
+    M = len(y)
+
+    y += cplx_gaussian([1, M], var_w).reshape(-1).copy()
+
+    tlen = len(theta_range)
+    dlen = len(deltaf_range)
+    
+    CFO_range = deltaf_range*p.f_samp
+
+    diff_magnitude = np.empty([dlen, tlen], dtype=FLOAT_DTYPE)
+    xy_diff = np.empty([dlen,M], dtype=CPLX_DTYPE)
+    for k,theta in enumerate(theta_range):
+        for l, CFO in enumerate(CFO_range):
+            xy_diff[l,:] = y - buildx(theta,CFO,p)
+        diff_magnitude[:,k] = np.abs(xy_diff).sum(axis=1)**2
+
+    
+    loglike = -M*np.log(pi*var_w) - 1/(2*var_w) * diff_magnitude
+    return loglike
+
+def loglikelihood_fct_TO(p,t0,l0, theta_range,  var_w=10):
+    """loglikelihood function over the range given by theta_range, deltaf_range, around initial values t0 and l0
+    output shape: theta x deltaf array
+    """
+
+    y = buildx(t0, l0,p)
+    M = len(y)
+    y += cplx_gaussian([1, M], var_w).reshape(-1).copy()
+    tlen = len(theta_range)
+    
+
+    xy_diff = np.empty([tlen,M], dtype=CPLX_DTYPE)
+    for k,theta in enumerate(theta_range):
+        xy_diff[k,:] = y - buildx(theta,l0,p)
+    diff_magnitude = np.abs(xy_diff).sum(axis=1)**2
+
+    loglike = -M*np.log(pi*var_w) - 1/(2*var_w) * diff_magnitude
+    return loglike
+
+def loglikelihood_fct_CFO(p, t0,l0, deltaf_range, var_w=1):
+    """loglikelihood function over the range deltaf_range, around initial values t0 and l0
+    output shape: 1 x deltaf array
+    """
+
+    y = buildx(t0, l0,p)
+    M = len(y)
+    y += cplx_gaussian([1, M], var_w).reshape(-1).copy()
+    dlen = len(deltaf_range)
+    CFO_range = deltaf_range*p.f_samp
+
+    xy_diff = np.zeros([dlen,M], dtype=CPLX_DTYPE)
+    for l, CFO in enumerate(CFO_range):
+        xy_diff[l,:] = y - buildx(t0,CFO,p)
+    diff_magnitude = np.abs(xy_diff).sum(axis=1)**2
+
+
+    
+    loglike = -M*np.log(pi*var_w) - 1/(2*var_w) * diff_magnitude
+    return loglike
 
 #--------------------
 def build_timestamp_id():

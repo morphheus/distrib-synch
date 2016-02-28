@@ -49,68 +49,8 @@ def ml_pinit_no_pulse_shape():
     p.update()
     return p 
 
-def buildx(TO,CFO, p):
-    """Builds a new x vector with appropriate TO and CFO"""
-    p.TO = TO
-    p.CFO = CFO
-    p.update()
-    return p.analog_sig.copy()
 
-def loglikelihood_fct(p,t0,l0, theta_range, deltaf_range, var_w=10):
-    """loglikelihood function over the range given by theta_range, deltaf_range, around initial values t0 and l0
-    output shape: theta x deltaf array
-    """
-
-    y = buildx(t0, l0,p)
-
-    M = len(y)
-
-    y += lib.cplx_gaussian([1, M], var_w).reshape(-1).copy()
-
-    tlen = len(theta_range)
-    dlen = len(deltaf_range)
-    
-    CFO_range = deltaf_range*p.f_samp
-
-    diff_magnitude = np.empty([dlen, tlen], dtype=lib.FLOAT_DTYPE)
-    xy_diff = np.empty([dlen,M], dtype=lib.CPLX_DTYPE)
-    for k,theta in enumerate(theta_range):
-        for l, CFO in enumerate(CFO_range):
-            xy_diff[l,:] = y - buildx(theta,CFO,p)
-        diff_magnitude[:,k] = np.abs(xy_diff).sum(axis=1)**2
-
-    
-    loglike = -M*np.log(pi*var_w) - 1/(2*var_w) * diff_magnitude
-    return loglike
-
-
-
-def loglikelihood_fct_CFO(p, t0,l0, deltaf_range, var_w=1):
-    """loglikelihood function over the range deltaf_range, around initial values t0 and l0
-    output shape: 1 x deltaf array
-    """
-
-    y = buildx(t0, l0,p)
-
-    M = len(y)
-
-    
-    y += lib.cplx_gaussian([1, M], var_w).reshape(-1).copy()
-    dlen = len(deltaf_range)
-    CFO_range = deltaf_range*p.f_samp
-
-    xy_diff = np.zeros([dlen,M], dtype=lib.CPLX_DTYPE)
-    for l, CFO in enumerate(CFO_range):
-        xy_diff[l,:] = y - buildx(t0,CFO,p)
-    diff_magnitude = np.abs(xy_diff).sum(axis=1)**2
-
-
-    
-    loglike = -M*np.log(pi*var_w) - 1/(2*var_w) * diff_magnitude
-    return loglike
-
-
-def ml_thy_3d():
+def ml_thy_3d(noise_var=1):
 
     p = ml_pinit()
 
@@ -130,7 +70,7 @@ def ml_thy_3d():
     deltaf_range = np.arange(d_min, d_max,d_halfwidth*2/points)*1e-6 # Deltaf in ppm
     #deltaf_range = np.zeros(len(deltaf_range))
     
-    loglike = loglikelihood_fct(p,0,0,theta_range,deltaf_range)
+    loglike = lib.loglikelihood_fct(p,0,0,theta_range,deltaf_range, var_w=noise_var)
 
     #deltaf_range = np.arange(-1,1.1, 0.1)*1e-6
     # Plot preparations
@@ -143,36 +83,46 @@ def ml_thy_3d():
     ax.set_xlabel('Time offset (samples)')
     ax.set_ylabel('CFO (ppm)')
     ax.set_zlabel('Log likelihood (1e3)')
+    graphs.plt.tight_layout()
     
     graphs.show()
 
-def ml_thy_cfo():
+def ml_thy_one(variable='CFO',noise_var=1):
     p = ml_pinit()
 
     points = 1000
+    t0 = 0
     d0 = 0
+    t_halfwidth = 100
     d_halfwidth = 1
 
+    t_min = t0-t_halfwidth
+    t_max = t0+t_halfwidth
     d_min = d0-d_halfwidth
     d_max = d0+d_halfwidth
 
+    t_step = max(int(round(t_halfwidth*2/points)),1) # int(round()) because integer samples
+    theta_range = np.arange(t_min, t_max, t_step) 
     deltaf_range = np.arange(d_min, d_max,d_halfwidth*2/points)*1e-6 # Deltaf in ppm
-    #deltaf_range = np.zeros(len(deltaf_range))
-    
-    loglike = loglikelihood_fct_CFO(p,0,0,deltaf_range)
 
-    #deltaf_range = np.arange(-1,1.1, 0.1)*1e-6
-    # Plot preparations
-    y = deltaf_range*1e6
+    
+    # x & z preparation
+    if variable == 'CFO':
+        loglike = lib.loglikelihood_fct_CFO(p,t0,d0,deltaf_range, var_w=noise_var)
+        x = deltaf_range*1e6
+        xlabel = 'CFO (ppm)'
+    elif variable == 'TO':
+        loglike = lib.loglikelihood_fct_TO(p,t0,d0,theta_range, var_w=noise_var)
+        x = theta_range
+        xlabel = 'TO (samples)'
     z = loglike*1e-3
 
+    # Plot prametersZ
+    ax = graphs.continuous(x, z)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel('Log likelihood (1e3)')
+    graphs.plt.tight_layout()
 
-    
-    # Plot prameters
-    #fig, ax = graphs.surface3d(x, y, z, density=40)
-    graphs.continuous(y, z)
-    graphs.plt.xlabel('CFO (ppm)')
-    graphs.plt.ylabel('Log likelihood (1e3)')
     
     graphs.show()
 
@@ -181,6 +131,7 @@ def ml_thy_cfo():
 
 # MAIN
 if __name__ == '__main__':
-
-    ml_thy_3d()
+    noise_variance = 0.01
+    ml_thy_one('TO', noise_var=noise_variance)
+    #ml_thy_3d(noise_var=noise_variance)
 
