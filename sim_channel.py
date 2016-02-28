@@ -31,6 +31,7 @@ class SimControls(lib.Struct):
         self.phi_bounds = [1,1]
         self.theta_bounds = [0,1]
         self.max_start_delay = 0 # In factor of basephi
+        self.min_back_adjust = 0.1 # In terms of phi
         self.self_emit = False # IF set to False, the self-emit will just be skipped.
         self.CFO_step_wait = 60
         self.rand_init = False
@@ -71,7 +72,6 @@ class SimControls(lib.Struct):
         # Other
         self.init_update = True
         self.saveall = False # This options also saves all fields in SyncParams to the control dict
-
 
     def update(self):
         """Must be run before runsim can be executed"""
@@ -174,7 +174,6 @@ def runsim(p,ctrl):
     CFO_corr_list = [[] for x in range(nodecount)]
     TO_corr_list = [[] for x in range(nodecount)]
     wait_til_adjust = np.zeros(nodecount, dtype=lib.INT_DTYPE)
-    wait_til_emit = np.zeros(nodecount, dtype=lib.INT_DTYPE)
     prev_adjustsample = np.zeros(nodecount, dtype=lib.INT_DTYPE)
     prev_emit_range = [None for x in range(nodecount)]
     prev_TO = np.array([float('inf')]*nodecount, dtype=lib.FLOAT_DTYPE)
@@ -241,7 +240,7 @@ def runsim(p,ctrl):
     # First event happens based on initial phase shift
     for clk, sample in enumerate(theta):
         prev_adjustsample[clk] = sample - phi[clk] + phi_minmax[1] + start_delay[clk]
-        if next_event[clk]:
+        if next_event[clk] == 'emit':
             first_event = int(round(emit_frac[clk]*phi[clk]))
         else:
             first_event = phi[clk]
@@ -368,6 +367,7 @@ def runsim(p,ctrl):
             if ctrl.half_duplex:
                 TO += hd_correction[node]
 
+            
             TO_correction = round(TO*epsilon_TO)
             theta[node] += TO_correction
             theta[node] = theta[node] % phi[node]
@@ -423,11 +423,13 @@ def runsim(p,ctrl):
 
             # --------
             # Set next event
-            wait_til_emit[node] = math.ceil(phi[node]*emit_frac[node])+cursample+TO_correction
-            if wait_til_emit[node] < 1:
-                wait_til_emit[node] = 1
+            next_event_sample = (math.ceil(phi[node]*emit_frac[node])\
+                                          +cursample+TO_correction).astype(lib.INT_DTYPE)
+            if next_event_sample <= cursample + phi[node]*ctrl.min_back_adjust:
+                next_event_sample += phi[node]
+            
 
-            ordered_insert(wait_til_emit[node], node)
+            ordered_insert(next_event_sample, node)
             next_event[node] = 'emit'
 
 

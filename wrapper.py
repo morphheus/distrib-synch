@@ -93,16 +93,16 @@ def dec_wrap2():
     ctrl.basephi = 6000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = True # Needed to draw graphs
-    ctrl.nodecount = 3 # Number of nodes
+    ctrl.nodecount = 30 # Number of nodes
     ctrl.static_nodes = 1
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
-    ctrl.max_start_delay = 10 # In factor of basephi
+    ctrl.max_start_delay = 15 # In factor of basephi
 
     ctrl.theta_bounds = [0.3,0.7] # In units of phi
     #ctrl.theta_bounds = [0.5,0.5] # In units of phi
     #ctrl.deltaf_bound = 3e-6
     ctrl.deltaf_bound = 0
-    ctrl.noise_var = 0
+    ctrl.noise_var = 0.01
     ctrl.rand_init = False
     ctrl.non_rand_seed = 192912341 # Only used if rand_init is False
     ctrl.max_echo_taps = 1 
@@ -118,7 +118,7 @@ def dec_wrap2():
     #ctrl.delay_sigma = 0.001 # Standard deviation used for the generator delay function
     #ctrl.delay_fct = lib.delay_pdf_exp
 
-    ctrl.half_duplex = False
+    ctrl.half_duplex = True
     ctrl.hd_slot0 = 0.3 # in terms of phi
     ctrl.hd_slot1 = 0.7 # in terms of phi
     ctrl.hd_block_during_emit = True
@@ -156,6 +156,7 @@ def main_interd():
     p, ctrl = dec_wrap2()
     sim_object = SimWrap(p, ctrl)
     sim_object.show_CFO = False
+    #sim_object.make_plots = False
     sim_object.simulate()
 
 #-----------------------
