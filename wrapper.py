@@ -118,7 +118,7 @@ def dec_wrap2():
     #ctrl.delay_sigma = 0.001 # Standard deviation used for the generator delay function
     #ctrl.delay_fct = lib.delay_pdf_exp
 
-    ctrl.half_duplex = True
+    ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
     ctrl.hd_slot1 = 0.7 # in terms of phi
     ctrl.hd_block_during_emit = True

@@ -209,9 +209,8 @@ def runsim(p,ctrl):
     clk_creation = np.random.randint(0,chansize, size=nodecount)
     channels = lib.cplx_gaussian( [nodecount,chansize], ctrl.noise_var) 
 
-    max_start_sample = int(round(ctrl.max_start_delay*basephi))
-    if max_start_sample:
-        start_delay = np.random.randint(0, max_start_sample, size=nodecount)
+    if ctrl.max_start_delay:
+        start_delay = np.random.randint(0, ctrl.max_start_delay, size=nodecount)*basephi
     else:
         start_delay = np.zeros(nodecount, dtype=lib.INT_DTYPE)
         
@@ -241,17 +240,17 @@ def runsim(p,ctrl):
 
     # First event happens based on initial phase shift
     for clk, sample in enumerate(theta):
-        prev_adjustsample[clk] = sample - phi[clk] + phi_minmax[1]
+        prev_adjustsample[clk] = sample - phi[clk] + phi_minmax[1] + start_delay[clk]
         if next_event[clk]:
-            first_event = int(round(emit_frac[clk]*phi[clk])) + start_delay[clk]
+            first_event = int(round(emit_frac[clk]*phi[clk]))
         else:
-            first_event = phi[clk]+ start_delay[clk]
+            first_event = phi[clk]
             
-        if ctrl.keep_intermediate_values:
-            sample_inter[clk].append(first_event)
-            theta_inter[clk].append(theta[clk])
-            phi_inter[clk].append(phi[clk])
-            deltaf_inter[clk].append(deltaf[clk])
+        #if ctrl.keep_intermediate_values:
+        #    sample_inter[clk].append(first_event)
+        #    theta_inter[clk].append(theta[clk])
+        #    phi_inter[clk].append(phi[clk])
+        #    deltaf_inter[clk].append(deltaf[clk])
 
         ordered_insert(prev_adjustsample[clk]+first_event,clk) 
 
@@ -303,6 +302,7 @@ def runsim(p,ctrl):
                     phi_inter[node].append(phi[node])
                     deltaf_inter[node].append(deltaf[node])
                 ordered_insert(phi[node]+cursample, node)
+                next_event[node] = 'emit'
 
 
 
@@ -433,7 +433,9 @@ def runsim(p,ctrl):
 
         # ----------------
         # Fetch next event/node
+        prev_sample = cursample
         cursample = queue_sample.pop(0)
+        if prev_sample > cursample: raise Exception("Cursample was lowered; time travel isn't allowed")
         node = queue_clk.pop(0)
 
 
