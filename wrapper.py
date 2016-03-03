@@ -99,10 +99,11 @@ def dec_wrap2():
     ctrl.max_start_delay = 15 # In factor of basephi
 
     ctrl.theta_bounds = [0.3,0.7] # In units of phi
+    ctrl.theta_bounds = [0,1] # In units of phi
     #ctrl.theta_bounds = [0.5,0.5] # In units of phi
     #ctrl.deltaf_bound = 3e-6
     ctrl.deltaf_bound = 0
-    ctrl.noise_var = 0.01
+    ctrl.noise_var = 1
     ctrl.rand_init = False
     ctrl.non_rand_seed = 192912341 # Only used if rand_init is False
     ctrl.max_echo_taps = 1 
@@ -114,11 +115,11 @@ def dec_wrap2():
     ctrl.CFO_processing_avgtype = 'reg'
     ctrl.CFO_processing_avgwindow = 1
     ctrl.max_CFO_correction = 1e-6 # As a factor of f_symb
-    #ctrl.min_delay = 0.02 # in terms of basephi
-    #ctrl.delay_sigma = 0.001 # Standard deviation used for the generator delay function
-    #ctrl.delay_fct = lib.delay_pdf_exp
+    ctrl.min_delay = 0.02 # in terms of basephi
+    ctrl.delay_sigma = 0.001 # Standard deviation used for the generator delay function
+    ctrl.delay_fct = lib.delay_pdf_exp
 
-    ctrl.half_duplex = True
+    ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
     ctrl.hd_slot1 = 0.7 # in terms of phi
     ctrl.hd_block_during_emit = True
@@ -145,7 +146,7 @@ def main_thesis():
     
     #graphs.crosscorr(p); graphs.show(); exit()
     #graphs.analog(p); graphs.show(); exit()
-    #graphs.pulse(p); graphs.show(); exit()
+    graphs.pulse(p); graphs.show(); exit()
 
     sim_object = SimWrap(p, ctrl)
     sim_object.show_plots = True
@@ -206,8 +207,8 @@ class SimWrap(lib.Struct):
 
 
 if __name__ == '__main__':
-    main_interd()
-    #main_thesis()
+    #main_interd()
+    main_thesis()
 
 
 

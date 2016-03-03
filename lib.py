@@ -61,7 +61,7 @@ def cplx_gaussian(shape, noise_variance):
         x = np.array([0+0j]*shape[0]*shape[1], dtype=CPLX_DTYPE).reshape(shape[0],-1)
     return x
 
-def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
+def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE, frac_TO=0):
     """Raised cosine:
     N: Number of samples
     a: rolloff factor (alpha)
@@ -73,9 +73,11 @@ def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
 
     NOTE: this thing far from optimized
     """
-    time = (np.arange(N,dtype=dtype)-N/2+0.5)/float(f)
-    zero_entry = math.floor(N/2) # Index of entry with a zero
-    if not N % 2:
+    time = (np.arange(N,dtype=dtype)-N/2+0.5 - frac_TO)/float(f)
+
+    if N % 2 and frac_TO % 1 == 0:
+        zero_entry = math.floor(N/2 + int(frac_TO)) # Index of entry with a zero
+    else:
         zero_entry = -1
 
     warnings.filterwarnings("ignore")
@@ -97,7 +99,7 @@ def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
     warnings.filterwarnings("always")
     return time,h
 
-def rrcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
+def rrcosfilter(N, a, T, f, dtype=CPLX_DTYPE, frac_TO=0):
     """Root Raised cosine:
     N: Number of samples
     a: rolloff factor (alpha)
@@ -108,7 +110,7 @@ def rrcosfilter(N, a, T, f, dtype=CPLX_DTYPE):
     h: impulse response
 
     """
-    time = (np.arange(N,dtype=dtype)-N/2+0.5)/float(f)
+    time = (np.arange(N,dtype=dtype)-N/2+0.5 - frac_TO)/float(f)
     zero_entry = math.floor(N/2) # Index of entry with a zero
     if not N % 2:
         zero_entry = -1
@@ -604,12 +606,13 @@ def build_delay_matrix(ctrl, delay_fct=delay_pdf_exp):
 #--------------------
 def buildx(TO,CFO, p):
     """Builds a new x vector with appropriate TO and CFO"""
-    p.TO = TO
+    p.TO = int(math.floor(TO))
+    p.frac_TO = TO % 1
     p.CFO = CFO
     p.update()
     return p.analog_sig.copy()
 
-def loglikelihood_fct(p,t0,l0, theta_range, deltaf_range, var_w=10):
+def loglikelihood_2d(p,t0,l0, theta_range, deltaf_range, var_w=1):
     """loglikelihood function over the range given by theta_range, deltaf_range, around initial values t0 and l0
     output shape: theta x deltaf array
     """
@@ -636,7 +639,7 @@ def loglikelihood_fct(p,t0,l0, theta_range, deltaf_range, var_w=10):
     loglike = -M*np.log(pi*var_w) - 1/(2*var_w) * diff_magnitude
     return loglike
 
-def loglikelihood_fct_TO(p,t0,l0, theta_range,  var_w=10):
+def loglikelihood_1d_TO(p,t0,l0, theta_range,  var_w=1):
     """loglikelihood function over the range given by theta_range, deltaf_range, around initial values t0 and l0
     output shape: theta x deltaf array
     """
@@ -644,6 +647,7 @@ def loglikelihood_fct_TO(p,t0,l0, theta_range,  var_w=10):
     y = buildx(t0, l0,p)
     M = len(y)
     y += cplx_gaussian([1, M], var_w).reshape(-1).copy()
+
     tlen = len(theta_range)
     
 
@@ -655,7 +659,7 @@ def loglikelihood_fct_TO(p,t0,l0, theta_range,  var_w=10):
     loglike = -M*np.log(pi*var_w) - 1/(2*var_w) * diff_magnitude
     return loglike
 
-def loglikelihood_fct_CFO(p, t0,l0, deltaf_range, var_w=1):
+def loglikelihood_1d_CFO(p, t0,l0, deltaf_range, var_w=1):
     """loglikelihood function over the range deltaf_range, around initial values t0 and l0
     output shape: 1 x deltaf array
     """
@@ -674,6 +678,33 @@ def loglikelihood_fct_CFO(p, t0,l0, deltaf_range, var_w=1):
 
     
     loglike = -M*np.log(pi*var_w) - 1/(2*var_w) * diff_magnitude
+    return loglike
+
+def ll_redux_2d(p,t0,l0, theta_range, deltaf_range, var_w=1):
+    """Function that has the same max  as the loglikelihood function
+    output shape: theta x deltaf array
+    """
+
+    y = buildx(t0, l0,p)
+
+    M = len(y)
+
+    y += cplx_gaussian([1, M], var_w).reshape(-1).copy()
+
+    tlen = len(theta_range)
+    dlen = len(deltaf_range)
+    
+    CFO_range = deltaf_range*p.f_samp
+
+    loglike = np.empty([dlen, tlen], dtype=FLOAT_DTYPE)
+    tmp = np.empty([dlen,M], dtype=FLOAT_DTYPE)
+    for k,theta in enumerate(theta_range):
+        for l, CFO in enumerate(CFO_range):
+            x = buildx(theta,CFO,p)
+            tmp[l,:] = np.real(y*x.conjugate())
+        loglike[:,k] = tmp.sum(axis=1).copy()
+
+    
     return loglike
 
 #--------------------
@@ -705,7 +736,8 @@ class SyncParams(Struct):
         self.plen = 101 # Note: must be odd
         self.rolloff = 0.1
         self.CFO = 0
-        self.TO = 0
+        self.TO = 0 # Must be an integer
+        self.frac_TO = 0 # Ideally, between zero and 1
         self.trans_delay = 0
         self.f_samp = 1 # Sampling rate
         self.f_symb = 1 # Symbol frequency
@@ -794,10 +826,12 @@ class SyncParams(Struct):
 
     def build_pulse(self):
         """Builds pulse from current parameters"""
+        rcos_args = (self.plen, self.rolloff, 1/self.f_symb, self.f_samp, ) 
+        rcos_kwargs = {'frac_TO':self.frac_TO}
         if self.pulse_type == 'raisedcosine':
-            time, pulse = rcosfilter(self.plen, self.rolloff, 1/self.f_symb, self.f_samp)
+            time, pulse = rcosfilter(*rcos_args, **rcos_kwargs)
         elif self.pulse_type == 'rootraisedcosine':
-            time, pulse = rrcosfilter(self.plen, self.rolloff, 1/self.f_symb, self.f_samp)
+            time, pulse = rrcosfilter(*rcos_args, **rcos_kwargs)
         else:
             raise ValueError('The "' + self.pulse_type + '" pulse type is unknown')
 

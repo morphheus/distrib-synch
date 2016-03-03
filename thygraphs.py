@@ -26,7 +26,7 @@ def ml_pinit():
     p.bias_removal = False
     p.ma_window = 1 # number of samples i.e. after analog modulation
     p.crosscorr_fct = 'analog'
-    p.theta_rangeain_type = 'chain'
+    p.train_type = 'single'
     p.update()
     return p 
 
@@ -45,32 +45,32 @@ def ml_pinit_no_pulse_shape():
     p.bias_removal = False
     p.ma_window = 1 # number of samples i.e. after analog modulation
     p.crosscorr_fct = 'analog'
-    p.theta_rangeain_type = 'chain'
+    p.theta_rangeain_type = 'single'
     p.update()
     return p 
 
 
-def ml_thy_3d(noise_var=1):
+def ml_full_3d(noise_var=1, fct=lib.ll_redux_2d):
+    """Graphs a 3d surface of the specified ML fct"""
+    p = ml_pinit_no_pulse_shape()
 
-    p = ml_pinit()
-
-    points = 40
+    points = 10
     t0 = 0
     d0 = 0
-    t_halfwidth = 100
-    d_halfwidth = 1
+    t_halfwidth = 10
+    d_halfwidth = 10
 
     t_min = t0-t_halfwidth
     t_max = t0+t_halfwidth
     d_min = d0-d_halfwidth
     d_max = d0+d_halfwidth
 
-    t_step = int(round(t_halfwidth*2/points)) # int(round()) because integer samples
+    t_step = t_halfwidth*2/points # int(round()) because integer samples
     theta_range = np.arange(t_min, t_max, t_step) 
     deltaf_range = np.arange(d_min, d_max,d_halfwidth*2/points)*1e-6 # Deltaf in ppm
     #deltaf_range = np.zeros(len(deltaf_range))
     
-    loglike = lib.loglikelihood_fct(p,0,0,theta_range,deltaf_range, var_w=noise_var)
+    loglike = fct(p,0,0,theta_range,deltaf_range, var_w=noise_var)
 
     #deltaf_range = np.arange(-1,1.1, 0.1)*1e-6
     # Plot preparations
@@ -79,7 +79,7 @@ def ml_thy_3d(noise_var=1):
     z = loglike*1e-3
 
     # Plot prameters
-    fig, ax = graphs.surface3d(x, y, z, density=40)
+    fig, ax = graphs.surfwowair declinedace3d(x, y, z, density=40)
     ax.set_xlabel('Time offset (samples)')
     ax.set_ylabel('CFO (ppm)')
     ax.set_zlabel('Log likelihood (1e3)')
@@ -87,11 +87,12 @@ def ml_thy_3d(noise_var=1):
     
     graphs.show()
 
-def ml_thy_one(variable='CFO',noise_var=1):
+def ml_full_one(variable='CFO',noise_var=1):
+    """Graphs only 1 axis of the log ML"""
     p = ml_pinit()
 
     points = 1000
-    t0 = 0
+    t0 = 10
     d0 = 0
     t_halfwidth = 100
     d_halfwidth = 1
@@ -108,11 +109,11 @@ def ml_thy_one(variable='CFO',noise_var=1):
     
     # x & z preparation
     if variable == 'CFO':
-        loglike = lib.loglikelihood_fct_CFO(p,t0,d0,deltaf_range, var_w=noise_var)
+        loglike = lib.loglikelihood_1d_CFO(p,t0,d0,deltaf_range, var_w=noise_var)
         x = deltaf_range*1e6
         xlabel = 'CFO (ppm)'
     elif variable == 'TO':
-        loglike = lib.loglikelihood_fct_TO(p,t0,d0,theta_range, var_w=noise_var)
+        loglike = lib.loglikelihood_1d_TO(p,t0,d0,theta_range, var_w=noise_var)
         x = theta_range
         xlabel = 'TO (samples)'
     z = loglike*1e-3
@@ -127,11 +128,47 @@ def ml_thy_one(variable='CFO',noise_var=1):
     graphs.show()
 
 
+    p = ml_pinit()
+
+    points = 40
+    t0 = 0
+    d0 = 0
+    t_halfwidth = 10
+    d_halfwidth = 1
+
+    t_min = t0-t_halfwidth
+    t_max = t0+t_halfwidth
+    d_min = d0-d_halfwidth
+    d_max = d0+d_halfwidth
+
+    t_step = t_halfwidth*2/points # int(round()) because integer samples
+    theta_range = np.arange(t_min, t_max, t_step) 
+    deltaf_range = np.arange(d_min, d_max,d_halfwidth*2/points)*1e-6 # Deltaf in ppm
+    #deltaf_range = np.zeros(len(deltaf_range))
+    
+    loglike = lib.ll_redux_2d(p,0,0,theta_range,deltaf_range, var_w=noise_var)
+
+    #deltaf_range = np.arange(-1,1.1, 0.1)*1e-6
+    # Plot preparations
+    x = theta_range
+    y = deltaf_range*1e6
+    z = loglike*1e-3
+
+    # Plot prameters
+    fig, ax = graphs.surface3d(x, y, z, density=40)
+    ax.set_xlabel('Time offset (samples)')
+    ax.set_ylabel('CFO (ppm)')
+    ax.set_zlabel('Log likelihood (1e3)')
+    graphs.plt.tight_layout()
+    
+    graphs.show()
+
+
 
 
 # MAIN
 if __name__ == '__main__':
-    noise_variance = 0.01
-    ml_thy_one('TO', noise_var=noise_variance)
-    #ml_thy_3d(noise_var=noise_variance)
+    noise_variance = 0.00
+    #ml_full_one('CFO', noise_var=noise_variance)
+    ml_full_3d(noise_var=noise_variance)
 
