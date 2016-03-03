@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from sim_channel import SimControls
 from lib import barywidth_map, calc_both_barycenters
 import lib
 
@@ -19,7 +20,7 @@ GRAPH_OUTPUT_FORMAT = 'eps'
 matplotlib.rcParams.update({'font.size': 14})
 
 
-#----------------
+#----- HELPER FCTS
 def remove_zeropad(x,y,repad_ratio):
     """Returns the truncated x and y arrays with the zero padding removed"""
     if len(x) > len(y):
@@ -105,7 +106,7 @@ def save(name, **kwargs):
 def show():
     plt.show()
 
-#----------------
+#----- GRAPHS
 def hair(samples,param, y_label='Parameter', savename=''):
     """Plots an evolution graph of the parameter of"""
     # samples: sample_inter output from the simulation
@@ -248,6 +249,7 @@ def barywidth(*args, axes=None, savename='', fit_type='order2', residuals=True, 
 
 def barywidth_wrap(p,ctrl, **kwargs):
     return barywidth(p, reach=ctrl.bmap_reach , scaling_fct=ctrl.bmap_scaling, **kwargs)
+
 def crosscorr(p, axes=None, savename='', is_zpos=True):
     """Builds a crosscorrelation graph from the crosscorrelation with zpos (default)
     Accepted input:
@@ -286,10 +288,7 @@ def crosscorr_zneg(p, axes=None, savename=''):
     crosscorr(p, axes=axes, savename=savename, is_zpos=False)
 
 def crosscorr_both(p, axes=None, savename=''):
-    """Builds a crosscorrelation graph from the crosscorrelation of both zpos and zneg
-    Accepted input:
-    (<class 'SyncParams'>)      will plot the crosscorrelation with the analog signal 
-    """
+    """Builds a crosscorrelation graph from the crosscorrelation of both zpos and zneg"""
     tmp = p.full_sim # Save temporary fullsim value
     tmp_bias = p.bias_removal # Save temporary biasremoval value
     p.full_sim = False
@@ -318,6 +317,7 @@ def crosscorr_both(p, axes=None, savename=''):
     return ax
 
 def analog(p, axes=None, savename=''):
+    """Absolute value of the pulse-shaped training sequence"""
     y = abs(p.analog_sig)
     x = np.arange(len(y)) - math.floor(len(y)/2)
 
@@ -330,8 +330,7 @@ def analog(p, axes=None, savename=''):
     return ax
 
 def analog_zpos(p,axes=None, savename=''):
-    
-    
+    """Absolute value of the pulse-shaped zpos sequence"""
     y = abs(p.analog_zpos)
     x = np.arange(len(y)) 
     
@@ -345,19 +344,39 @@ def analog_zpos(p,axes=None, savename=''):
     return fh
 
 def pulse(p, axes=None, savename=''):
+    """Shaping pulse: p.pulse"""
     
     y = np.real(p.pulse)
     x = np.arange(len(y)) - len(y)/2 + 0.5
 
 
-    discrete(x,y, axes=axes)
+    ax = discrete(x,y, axes=axes)
 
-    plt.xlabel('n (samples)')
-    plt.ylabel('p[n])')
+    ax.set_xlabel('n (samples)')
+    ax.set_ylabel('p[n])')
     
     save(savename)
-    return x,y
+    return ax
 
+def delay(ctrl, axes=None, savename=''):
+    """Plots the PDF of the delay params"""
+    obj = ctrl.delay_params
+    fct = obj.delay_pdf_eval
+
+    tmp_sigma = obj.sigma
+    obj.sigma *= ctrl.basephi
+
+    xmin = obj.t0
+    xmax = 4 + xmin
+    x = np.arange(xmin, xmax, 0.01)*obj.sigma
+    y = np.array(list(map(fct, x)))
+
+    obj.sigma = tmp_sigma
+
+    ax = continuous(x,y,axes=axes)
+    ax.set_xlabel('Delay (Samples)')
+    ax.set_ylabel('Amplitude')
+    return ax
 
 #----------------
 def cat_graphs(graphs, rows=2,subplotsize=(9,5), savename=''):
@@ -416,7 +435,6 @@ def all_graphs(p,ctrl=None):
 
     cat_graphs(glist)
 
-# End
 
 
 

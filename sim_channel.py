@@ -44,9 +44,9 @@ class SimControls(lib.Struct):
         self.non_rand_seed = 1231231
         # Node behaviours
         self.static_nodes = 0 # Static nodes do not adjust
-        # Echo controls
-        self.max_echo_taps = 4
-        self.min_delay = 0
+        # Echo controls, initialized with no echoes
+        self.delay_params = lib.DelayParams(lib.delay_pdf_exp)
+        self.pdf_kwargs = dict()
         # Correction controls
         self.epsilon_TO = 0.5
         self.epsilon_CFO = 0.25
@@ -78,13 +78,14 @@ class SimControls(lib.Struct):
         self.chansize = int(self.basephi*self.steps)
         self.phi_minmax = [round(x*self.basephi) for x in self.phi_bounds]
         self.theta_minmax = [round(x*self.basephi) for x in self.theta_bounds]
-        lib.build_delay_matrix(self, delay_fct=self.delay_fct);
-
+        self.echo_delay, self.echo_amp = self.delay_params.build_delay_matrix(self.nodecount, self.basephi, **self.pdf_kwargs)
+        
         # Input protection
         val_within_bounds(self.max_start_delay, [0,float('inf')] , 'max_start_delay')
         val_within_bounds(self.hd_slot0, [0,1] , 'hd_slot0')
         val_within_bounds(self.hd_slot1, [0,1] , 'hd_slot1')
         
+
 
         
         self.init_update = True

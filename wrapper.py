@@ -93,7 +93,7 @@ def dec_wrap2():
     ctrl.basephi = 6000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = True # Needed to draw graphs
-    ctrl.nodecount = 30 # Number of nodes
+    ctrl.nodecount = 2 # Number of nodes
     ctrl.static_nodes = 1
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
     ctrl.max_start_delay = 15 # In factor of basephi
@@ -115,9 +115,10 @@ def dec_wrap2():
     ctrl.CFO_processing_avgtype = 'reg'
     ctrl.CFO_processing_avgwindow = 1
     ctrl.max_CFO_correction = 1e-6 # As a factor of f_symb
-    ctrl.min_delay = 0.02 # in terms of basephi
-    ctrl.delay_sigma = 0.001 # Standard deviation used for the generator delay function
-    ctrl.delay_fct = lib.delay_pdf_exp
+    ctrl.delay_params = lib.DelayParams(lib.delay_pdf_exp)
+    ctrl.delay_params.t0 = 0
+    ctrl.delay_params.taps = 1
+    ctrl.delay_params.sigma = 0.001
 
     ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
@@ -155,6 +156,9 @@ def main_thesis():
 def main_interd():
 
     p, ctrl = dec_wrap2()
+
+    graphs.delay(ctrl); graphs.show(); exit()
+
     sim_object = SimWrap(p, ctrl)
     sim_object.show_CFO = False
     #sim_object.make_plots = False
@@ -207,8 +211,8 @@ class SimWrap(lib.Struct):
 
 
 if __name__ == '__main__':
-    #main_interd()
-    main_thesis()
+    main_interd()
+    #main_thesis()
 
 
 

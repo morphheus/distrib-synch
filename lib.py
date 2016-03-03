@@ -490,13 +490,16 @@ def match_decimate(signal, pulse, spacing, mode='same'):
 
 #--------------------
 def cfo_mapper_pass(barywidth, p):
+    """Always returns zero"""
     return 0
 
 def cfo_mapper_linear(barywidth, p):
+    """Linear CFO estimation from p.baryslope and p.basewidth"""
     tmp = (barywidth - p.basewidth) / (p.baryslope)
     return tmp
 
 def cfo_mapper_order2(barywidth, p):
+    """2nd order CFO estimation from p.order2fit"""
     poly = p.order2fit
     poly[2] = p.basewidth - barywidth
     roots = np.real(np.roots(poly))
@@ -554,54 +557,16 @@ def delay_pdf_static(ctrl):
     amp = np.array(amp_list, dtype=CPLX_DTYPE)
     return delays, amp
 
-def delay_pdf_exp(ctrl):
-    """Uniformly distributed delay with exponentially decaying amplitudes.
-    If they delay is t, then the associated amplitude is:
-    amp = exp(-t+t_0)"""
+def delay_pdf_exp(t, sigma, t0=0):
+    """Exponentially decaying delay PDF""
+    amp = (1/sigma) exp(-(1/sigma)*(t-t0))"""
+    if sigma == 0:
+        amp = 1 if t >= t0 else 0
+    else:
+        l = 1/sigma
+        amp = np.exp(-l*(t - t0)) if t >= t0 else 0
 
-    
-    taps = ctrl.max_echo_taps
-    t0 = ctrl.min_delay
-
-    # Delay list uniform distributed with width of sqrt(12)*\sigma + base delay
-    delay_list = [np.random.rand()*np.sqrt(12)*ctrl.delay_sigma +t0 for x in range(taps)]
-    delay_list.sort()
-    
-
-    amp_list = [1/(x+1)**2 for x in delay_list]
-
-
-    # Convert to numpy arrayz
-    delays = np.array([round(x*ctrl.basephi) for x in delay_list], dtype=INT_DTYPE)
-    amp = np.array(amp_list, dtype=CPLX_DTYPE)
-    return delays, amp
-
-def build_delay_matrix(ctrl, delay_fct=delay_pdf_exp):
-    """From the delay function, initiate an appropriately sized delay matrix"""
-    # Note that PDF functions must be declared/imported BEFORE this function definition
-
-    # ECHOES USAGE:
-    # echo_<name>[curnode][emitclk][k] = k'th echo between the two clocks. 
-    
-
-    nodecount = ctrl.nodecount
-    #nodecount = 1
-    array_dtype_string = INT_DTYPE+','+CPLX_DTYPE
-    echoes = np.zeros((nodecount, nodecount, ctrl.max_echo_taps), dtype=array_dtype_string)
-    echoes.dtype.names = ('delay', 'amp')
-
-
-    for k in range(nodecount):
-        for l in range(nodecount):
-            if k == l:
-                continue
-            echoes['delay'][k][l], echoes['amp'][k][l] = delay_fct(ctrl)
-
-
-    # TODO: Pick input delay/amp from ctrl
-    # TODO: don't use a structured array
-    ctrl.echo_delay = echoes['delay']
-    ctrl.echo_amp = echoes['amp']
+    return amp
 
 #--------------------
 def buildx(TO,CFO, p):
@@ -728,6 +693,62 @@ class Struct:
     def print_all_items(self):
         for name,val in self:
             print(name + '\n' + str(val)+ '\n')
+
+class DelayParams(Struct):
+    """Parameters class for the delays between nodes"""
+    def __init__(self, delay_pdf,
+                 taps=1,
+                 t0=0,
+                 sigma=0):
+
+        if not callable(delay_pdf):
+            raise ValueError(type(self).__name__ + " must be initialized with a callable PDF function")
+        self.delay_pdf = delay_pdf
+        self.taps = taps
+        self.t0 = t0
+        self.sigma = sigma
+
+    
+    def delay_pdf_eval(self, t, **kwargs):
+        return self.delay_pdf(t, self.sigma, self.t0, **kwargs)
+
+    def rnd_delay(self, **kwargs):
+        """Builds an array of delays with the associated amplitudes. Uniformly picks the delays,
+        then feeds it into the PDF function. All time values in terms of basephi.
+        input:
+            taps  : total number of taps to generate
+            delay_min  : SE
+            delay_sigma: SE
+        output:
+            delay: np array of the delays
+            amps:  np array of the amplitudes
+        """
+        delay_list = [np.random.rand()*np.sqrt(12)*self.sigma+self.t0 for x in range(self.taps)]
+        amp_list = [self.delay_pdf_eval(t, **kwargs) for t in delay_list]
+        delay = np.array(delay_list, FLOAT_DTYPE)
+        amp = np.array(amp_list, FLOAT_DTYPE)
+        return delay, amp
+
+    def build_delay_matrix(self, nodecount, basephi, **kwargs):
+        """From the delay function, initiate an appropriately sized delay matrix into ctrl"""
+        array_dtype_string = INT_DTYPE+','+CPLX_DTYPE
+        echoes = np.zeros((nodecount, nodecount, self.taps), dtype=array_dtype_string)
+        echoes.dtype.names = ('delay', 'amp')
+
+        for k in range(nodecount):
+            for l in range(nodecount):
+                if k == l:
+                    continue
+                delay, amp = self.rnd_delay(**kwargs)
+                echoes['delay'][k][l] = (delay*basephi).astype(INT_DTYPE)
+                echoes['amp'][k][l] = amp
+
+        
+
+
+        # TODO: Pick input delay/amp from ctrl
+        # TODO: don't use a structured array
+        return echoes['delay'], echoes['amp']
 
 class SyncParams(Struct):
     """Parameter struct containing all the parameters used for the simulation, from the generation of the modulated training sequence to the exponent of the cross-correlation"""
