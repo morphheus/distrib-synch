@@ -5,6 +5,9 @@ import numpy as np
 import time
 import sqlite3
 import io
+import inspect
+import types
+import lib
 
 
 # Default values
@@ -52,7 +55,6 @@ def pprint_date(date):
     print(msg)
 
 #---------------------
-# TYPE ADAPT FUNCTIONS
 def adapt_array(arr):
     """
     http://stackoverflow.com/a/31312102/190597 (SoulNibbler)
@@ -66,6 +68,10 @@ def adapt_list(lst):
     bin_list = bytes(repr(lst), 'ascii')
     return sqlite3.Binary(bin_list)
 
+def adapt_dict(dct):
+    bin_list = bytes(repr(fct), 'ascii')
+    return sqlite3.Binary(bin_list)
+
 def adapt_bool(boolean):
     if boolean:
         return 1
@@ -76,16 +82,27 @@ def adapt_float64(number):
     return float(number)
 
 def adapt_function(fct):
-    return fct.__name__
+    fct_str = inspect.getmodule(fct).__name__ + '.' + fct.__name__
+    return fct_str
+
+def adapt_delayparams(thing):
+    fct_str = repr(thing.__dict__)
+    return fct_str
+
+def adapt_syncparams(thing):
+    fct_str = repr(thing.__dict__)
+    return fct_str
 
 #----------------------
-# TYPE CONVERT FUNCTIONS
 def convert_array(text):
     out = io.BytesIO(text)
     out.seek(0)
     return np.load(out)
 
 def convert_list(text):
+    return(eval(text))
+
+def convert_dict(text):
     return(eval(text))
 
 def convert_bool(boolean):
@@ -97,23 +114,35 @@ def convert_bool(boolean):
 def convert_float64(number):
     return np.float64(number)
 
-def convert_function(string):
-    return eval(string)
+def convert_function(text):
+    return str(text)
+
+def convert_delayparams(text):
+    return str(text)
+
+def convert_syncparams(text):
+    return str(text)
 
 #----------------------
 def connect(dbase_file=DEF_DB):
     
     sqlite3.register_adapter(np.ndarray, adapt_array)
     sqlite3.register_adapter(list, adapt_list)
+    sqlite3.register_adapter(dict, adapt_dict)
     sqlite3.register_adapter(bool, adapt_bool)
     sqlite3.register_adapter(np.float64, adapt_float64)
-    #sqlite3.register_adapter(;'function', adapt_function)
+    sqlite3.register_adapter(types.FunctionType, adapt_function)
+    sqlite3.register_adapter(lib.DelayParams, adapt_delayparams)
+    sqlite3.register_adapter(lib.SyncParams, adapt_syncparams)
 
     sqlite3.register_converter("ARRAY", convert_array)
     sqlite3.register_converter("LIST", convert_list)
+    sqlite3.register_converter("DICT", convert_dict)
     sqlite3.register_converter("BOOL", convert_bool)
     sqlite3.register_converter("FLOAT64", convert_float64)
-    #sqlite3.register_converter("FUNCTION", convert_function)
+    sqlite3.register_converter("FUNCTION", convert_function)
+    sqlite3.register_converter("DELAYPARAMS", convert_delayparams)
+    sqlite3.register_converter("SYNCPARAMS", convert_syncparams)
 
     conn = sqlite3.connect(dbase_file, detect_types=sqlite3.PARSE_DECLTYPES)
     return conn
@@ -153,13 +182,17 @@ def init(dbase_file=DEF_DB, table_name=DEF_TABLE):
 
 
     type_assoc = {\
-             'int':'INTEGER',\
-             'bool':'BOOL',\
-             'str':'TEXT',\
-             'ndarray':'ARRAY',\
-             'float':'REAL',\
-             'float64':'FLOAT64',\
-             'list':'LIST'\
+                  'int':'INTEGER',\
+                  'bool':'BOOL',\
+                  'str':'TEXT',\
+                  'ndarray':'ARRAY',\
+                  'float':'REAL',\
+                  'float64':'FLOAT64',\
+                  'list':'LIST',\
+                  'dict':'DICT',\
+                  'DelayParams':'DELAYPARAMS',\
+                  'SyncParams':'SYNCPARAMS',\
+                  'function':'FUNCTION'\
              }
     
     c.execute("CREATE TABLE {} (ptype TEXT PRIMARY KEY, stype TEXT)"\
@@ -209,8 +242,9 @@ def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
             if not x in dbcols:
                 tmp = type(data[x]).__name__ # Extract python type
                 toadd.append([x,type_assoc[tmp]]) # <--- [varname, sql_type]
-    except KeyError as inst:
-        raise Exception("Incompatible type " + str(inst) + " for data entry '" + str(x) +"'")
+    except KeyError as e:
+        print(type_assoc)
+        raise KeyError("Incompatible type "+str(e)+", type: "+str(tmp)+" for data entry '"+str(x) +"'")
 
     for x in toadd:
         c.execute("ALTER TABLE {tn} ADD COLUMN '{cn}' {ct}"\
@@ -227,17 +261,24 @@ def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
         if cn == __PRIMARY:
             continue
 
-        if type(val) == type(True):
-            val = int(val)
+        if type(val) == type(dict()):
+            val = list(val.items())
+
+        
         collist.append(cn)
         vallist.append(val)
 
     c.execute("INSERT INTO {} ({}) VALUES ({})".format(tn, __PRIMARY, data[__PRIMARY]))
     for k in range(len(collist)):
         
-        c.execute("UPDATE {} SET {}=(?) WHERE date={}".format(tn, collist[k], data[__PRIMARY])\
-                  , (vallist[k],))
-    
+        try:
+            c.execute("UPDATE {} SET {}=(?) WHERE date={}".format(tn, collist[k], data[__PRIMARY])\
+                    , (vallist[k],))
+        except sqlite3.InterfaceError as e:
+            #c.execute("UPDATE {} SET {}=(?) WHERE date={}".format(tn, collist[k], data[__PRIMARY])\
+                    #, (list(vallist[k]),))
+            raise type(e)('Error on ' + str(collist[k]) + ' with value ' + str(vallist[k]))
+            
     conn.commit()
 
     if close_conn:
@@ -354,3 +395,6 @@ def fetch_cols(date, collist , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
 
 
 
+
+if __name__ == '__main__':
+    print('hallo')

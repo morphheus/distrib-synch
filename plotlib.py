@@ -119,6 +119,11 @@ def hair(samples,param, y_label='Parameter', savename=''):
 
     xmin = 0
     xmax = max([x[-1] for x in samples])
+    ymin, ymax = ax.get_ylim()
+    tmp = ymax-ymin
+    ymin, ymax = (ymin-0.05*tmp, ymax+0.05*tmp)
+    
+    ax.set_ylim([ymin,ymax])
     ax.set_xlim([xmin,xmax])
     ax.set_xlabel('Sample')
     ax.set_ylabel(y_label)

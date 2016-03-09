@@ -7,6 +7,7 @@ import os
 import lib
 import numpy as np
 import warnings
+import inspect
 
 
 from sim_channel import runsim, SimControls
@@ -76,9 +77,9 @@ def dec_wrap2():
     p.repeat = 1
     p.spacing_factor = 1 # CHANGE TO TWO!
 
-    p.power_weight = 4
+    p.power_weight = 2
     p.full_sim = True
-    p.bias_removal = True
+    p.bias_removal = False
     p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
     p.train_type = 'single' # Type of training sequence
     p.crosscorr_fct = 'match_decimate' 
@@ -90,22 +91,22 @@ def dec_wrap2():
 
     ctrl = SimControls()
     ctrl.steps = 60 # Approx number of emissions per node
-    ctrl.basephi = 6000 # How many samples between emission
+    ctrl.basephi = 8000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = True # Needed to draw graphs
-    ctrl.nodecount = 2 # Number of nodes
-    ctrl.static_nodes = 1
+    ctrl.nodecount = 4 # Number of nodes
+    ctrl.static_nodes = 2
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
+    ctrl.TO_step_wait = 1
     ctrl.max_start_delay = 15 # In factor of basephi
 
     ctrl.theta_bounds = [0.3,0.7] # In units of phi
-    ctrl.theta_bounds = [0,1] # In units of phi
-    #ctrl.theta_bounds = [0.5,0.5] # In units of phi
+    ctrl.theta_bounds = [0.5,0.5] # In units of phi
     #ctrl.deltaf_bound = 3e-6
     ctrl.deltaf_bound = 0
     ctrl.noise_var = 1
-    ctrl.rand_init = False
-    ctrl.non_rand_seed = 192912341 # Only used if rand_init is False
+    ctrl.rand_init = True
+    ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
     ctrl.max_echo_taps = 1 
 
     ctrl.bmap_reach = 3e-6
@@ -115,16 +116,17 @@ def dec_wrap2():
     ctrl.CFO_processing_avgtype = 'reg'
     ctrl.CFO_processing_avgwindow = 1
     ctrl.max_CFO_correction = 1e-6 # As a factor of f_symb
+
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_exp)
     ctrl.delay_params.t0 = 0
     ctrl.delay_params.taps = 1
-    ctrl.delay_params.sigma = 0.001
+    ctrl.delay_params.sigma = 0
 
     ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
     ctrl.hd_slot1 = 0.7 # in terms of phi
     ctrl.hd_block_during_emit = True
-    ctrl.hd_block_extrawidth = 2 # as a factor of offset (see runsim to know what is offset)
+    ctrl.hd_block_extrawidth = 0 # as a factor of offset (see runsim to know what is offset)
 
     ctrl.var_winlen = False
     ctrl.vw_minsize = 5 # as a factor of len(p.analog_sig)
@@ -157,7 +159,8 @@ def main_interd():
 
     p, ctrl = dec_wrap2()
 
-    graphs.delay(ctrl); graphs.show(); exit()
+
+    #graphs.delay(ctrl); graphs.show(); exit()
 
     sim_object = SimWrap(p, ctrl)
     sim_object.show_CFO = False
@@ -201,7 +204,7 @@ class SimWrap(lib.Struct):
         # Exec the simulation and save the output
         runsim(self.p, self.ctrl)
         self.ctrl.date = lib.build_timestamp_id();
-        #db.add(self.ctrl)
+        db.add(self.ctrl.__dict__)
 
         
         # Plot pretty graphs

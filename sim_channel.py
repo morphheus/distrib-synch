@@ -34,6 +34,7 @@ class SimControls(lib.Struct):
         self.min_back_adjust = 0.1 # In terms of phi
         self.self_emit = False # IF set to False, the self-emit will just be skipped.
         self.CFO_step_wait = 60
+        self.TO_step_wait = 1
         self.rand_init = False
         self.display = True # Display progress of runsim
         self.keep_intermediate_values = False
@@ -84,9 +85,6 @@ class SimControls(lib.Struct):
         val_within_bounds(self.max_start_delay, [0,float('inf')] , 'max_start_delay')
         val_within_bounds(self.hd_slot0, [0,1] , 'hd_slot0')
         val_within_bounds(self.hd_slot1, [0,1] , 'hd_slot1')
-        
-
-
         
         self.init_update = True
 
@@ -170,7 +168,7 @@ def runsim(p,ctrl):
     deltaf_minmax = np.array([-1*ctrl.deltaf_bound,ctrl.deltaf_bound])*p.f_symb
     do_CFO_correction = np.array([False]*nodecount)
     wait_CFO_correction = np.zeros(nodecount)
-    wait_adjust = np.zeros(nodecount)
+    wait_emit = np.zeros(nodecount)
     CFO_maxjump_direction = np.ones(nodecount)
     CFO_corr_list = [[] for x in range(nodecount)]
     TO_corr_list = [[] for x in range(nodecount)]
@@ -179,9 +177,9 @@ def runsim(p,ctrl):
     prev_emit_range = [None for x in range(nodecount)]
     prev_TO = np.array([float('inf')]*nodecount, dtype=lib.FLOAT_DTYPE)
     nodes_winlen = np.array([ctrl.chansize]*nodecount, dtype=lib.INT_DTYPE)
-    next_event = ['emit']*nodecount
     hd_sync_slot = np.array([0 if k%2 else 1 for k in range(nodecount)])
-    nodetype = ['static']*ctrl.static_nodes + ['variable'] * (nodecount-ctrl.static_nodes)
+    nodetype = np.array(['static']*ctrl.static_nodes + ['variable']*(nodecount-ctrl.static_nodes))
+    next_event = np.array(['emit' if x=='static' else 'adjust' for x in nodetype])
 
 
     if ctrl.keep_intermediate_values:
@@ -213,7 +211,10 @@ def runsim(p,ctrl):
         start_delay = np.random.randint(0, ctrl.max_start_delay, size=nodecount)*basephi
     else:
         start_delay = np.zeros(nodecount, dtype=lib.INT_DTYPE)
-        
+
+    # Make sure static nodes are always start by 
+    start_delay[nodetype=='static'] = 0
+    
 
     if not ctrl.rand_init:
         np.random.seed()
@@ -223,7 +224,6 @@ def runsim(p,ctrl):
     # Correction algorithms variables
     max_CFO_correction = ctrl.max_CFO_correction*p.f_symb
 
-    # Release unused variables:
 
 
 
@@ -236,23 +236,28 @@ def runsim(p,ctrl):
         print('deltaf std init: ' + str(np.std(deltaf)) + '    spread: '+ str(max(deltaf) -min(deltaf))+ '\n')
 
 
-
+    # Local fct to add intermediate values, if necessary
+    def add_inter(sample, node):
+        if ctrl.keep_intermediate_values:
+            sample_inter[node].append(sample)
+            theta_inter[node].append(theta[node])
+            phi_inter[node].append(phi[node])
+            deltaf_inter[node].append(deltaf[node])
 
     # First event happens based on initial phase shift
     for clk, sample in enumerate(theta):
         prev_adjustsample[clk] = sample - phi[clk] + phi_minmax[1] + start_delay[clk]
+        wait_til_adjust[clk] = math.floor(phi[clk]*adjust_frac[clk])
         if next_event[clk] == 'emit':
             first_event = int(round(emit_frac[clk]*phi[clk]))
         else:
             first_event = phi[clk]
-            
-        #if ctrl.keep_intermediate_values:
-        #    sample_inter[clk].append(first_event)
-        #    theta_inter[clk].append(theta[clk])
-        #    phi_inter[clk].append(phi[clk])
-        #    deltaf_inter[clk].append(deltaf[clk])
 
+        add_inter(prev_adjustsample[clk], clk)
         ordered_insert(prev_adjustsample[clk]+first_event,clk) 
+
+
+
 
 
 
@@ -296,11 +301,7 @@ def runsim(p,ctrl):
 
                 next_event[node] = 'adjust'
             elif nodetype[node] == 'static':
-                if ctrl.keep_intermediate_values:
-                    sample_inter[node].append(cursample)
-                    theta_inter[node].append(theta[node])
-                    phi_inter[node].append(phi[node])
-                    deltaf_inter[node].append(deltaf[node])
+                add_inter(cursample, node)
                 ordered_insert(phi[node]+cursample, node)
                 next_event[node] = 'emit'
 
@@ -347,7 +348,7 @@ def runsim(p,ctrl):
             prev_adjustsample[node] = cursample
 
             # Block channel values when node emitted
-            if ctrl.half_duplex and ctrl.hd_block_during_emit:
+            if ctrl.half_duplex and ctrl.hd_block_during_emit and prev_emit_range[node] is not None:
                 channels[node, prev_emit_range[node]] = 0
 
 
@@ -359,10 +360,17 @@ def runsim(p,ctrl):
                 barypos = winlen - wait_til_adjust[node]
                 baryneg = barypos
 
+
+            
+            #print(corpos.shape); exit()
             bary_avg = int(round((barypos+baryneg)/2)) 
 
             # Offset with respect to emit time
             TO = winmax - winlen + bary_avg - cursample + wait_til_adjust[node] 
+            #if node==2:
+            #    print(wait_emit[node])
+            #    graphs.continuous(corpos)
+            #    graphs.show()
             
             # Fix slot offset for 
             if ctrl.half_duplex:
@@ -414,24 +422,26 @@ def runsim(p,ctrl):
                 deltaf[node] += CFO_correction
 
             # Bookeeping
-            if ctrl.keep_intermediate_values:
-                sample_inter[node].append(cursample)
-                theta_inter[node].append(theta[node])
-                phi_inter[node].append(phi[node])
-                deltaf_inter[node].append(deltaf[node])
+            add_inter(cursample, node)
 
 
 
             # --------
             # Set next event
-            next_event_sample = (math.ceil(phi[node]*emit_frac[node])\
+            if wait_emit[node] < ctrl.TO_step_wait:
+                next_event_sample = (math.ceil(phi[node])\
                                           +cursample+TO_correction).astype(lib.INT_DTYPE)
+                next_event[node] = 'adjust'
+                wait_emit[node] += 1
+            else:
+                next_event_sample = (math.ceil(phi[node]*emit_frac[node])\
+                                          +cursample+TO_correction).astype(lib.INT_DTYPE)
+                next_event[node] = 'emit'
+
             if next_event_sample <= cursample + phi[node]*ctrl.min_back_adjust:
                 next_event_sample += phi[node]
             
-
             ordered_insert(next_event_sample, node)
-            next_event[node] = 'emit'
 
 
         # ----------------
@@ -468,26 +478,10 @@ def runsim(p,ctrl):
         ctrl.phi_inter = phi_inter
 
     if ctrl.saveall:
-        #ctrl.update(p.__dict__)
-        warnings.warn('Not doing saveall to the ctrl struct')
-        pass
+        del p.__dict__['TO']
+        ctrl.add(**p.__dict__)
+        ctrl.pdf_kwargs = {'stuff':4}
 
-
-    """
-    Emit vs Acquire: sample round DOWN after emit and sample round UP after acquire.
-
-
-    OPTIMIZAION
-
-    1. Make scheduler a single list of tuples. In fact, consider a different data strucutre for schedule
-
-    2. The topo_matrix is iterated through. Try to make 3d topo_matrix to save on that iteration
-
-    3. Skip emitting in your own channel times zero. (very small increase)
-
-    4. Fold in "ordered insert" in the while loop to save on the function call.
-
-    """
 
 
 

@@ -10,11 +10,10 @@ from sqlite3 import OperationalError
 from numpy import pi
 from pprint import pprint
 from scipy.signal import fftconvolve
-
-import dumbsqlite3 as db
 from scipy.optimize import curve_fit, leastsq
 
-#warnings.simplefilter('default')
+import dumbsqlite3 as db
+
 
 
 
@@ -398,7 +397,10 @@ def calc_both_barycenters(p, *args,mode='valid'):
         decimated_signal, start_index, _ = match_decimate(g, p.pulse, p.spacing)
         crosscorrpos = np.abs(crosscorr_fct(p.training_seq, decimated_signal, 'same'))
         barypos = start_index + p.spacing*np.argmax(crosscorrpos)
+        #barypos, crosscorrpos = barycenter_correlation(p.training_seq , decimated_signal, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode, ma_window=p.ma_window) 
+        #barypos = start_index + p.spacing*(barypos)
         return barypos, barypos, crosscorrpos, crosscorrpos
+
     # Multi ZC handling
     elif p.crosscorr_fct == 'zeropadded':
         f1 = p.pad_zpos
