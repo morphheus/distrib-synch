@@ -5,6 +5,7 @@ import bisect
 import math
 import warnings
 import time
+import inspect
 from sqlite3 import OperationalError
 
 from numpy import pi
@@ -16,6 +17,7 @@ import dumbsqlite3 as db
 
 
 
+LOGFILE = 'simlog.txt'
 
 FLOAT_DTYPE = 'float64'
 CPLX_DTYPE = 'complex128'
@@ -679,6 +681,22 @@ def build_timestamp_id():
     """Builds a timestamp, and appens a random 3 digit number after it"""
     return db.build_timestamp_id()
 
+def appendlog(logdesc):
+    """Appends the text to the logfile"""
+    tempo = time.localtime()
+    vals = ['year', 'mon', 'mday', 'hour', 'min', 'sec']
+    vals = ['tm_' + x for x in vals]
+    tlst = [str(getattr(tempo,x)).zfill(2) for x in vals] # OS query of vals
+
+    timestamp = '[' + '/'.join(tlst[0:3]) + ' ' + ':'.join(tlst[3:6]) + ' '
+
+    callerframe = inspect.stack()[1]
+    caller = str(callerframe.filename) + ':' + str(callerframe.lineno) + '] '
+    logmsg = timestamp + caller + logdesc + '\n'
+
+    with open(LOGFILE, 'a+') as f:
+        f.write(logmsg)
+
 
 ##########################
 # CLASSDEFS
@@ -942,6 +960,9 @@ class SyncParams(Struct):
         # Done updating
         self.init_update = True
 
+    def change(self, var, val):
+        setattr(self, var, val)
+        self.update()
 
 
 

@@ -107,7 +107,6 @@ def dec_wrap2():
     ctrl.noise_var = 1
     ctrl.rand_init = True
     ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
-    ctrl.max_echo_taps = 1 
 
     ctrl.bmap_reach = 3e-6
     ctrl.bmap_scaling = 100
@@ -139,7 +138,13 @@ def dec_wrap2():
 
     ctrl.update()
 
-    return p, ctrl
+    cdict = {
+        'nodecount':[3,4,5,6],
+        'rand_init':[True]*3 + [True],
+        'saveall':[False, False]
+        }
+
+    return p, ctrl, cdict
 
 #------------------------
 def main_thesis():
@@ -157,15 +162,19 @@ def main_thesis():
 
 def main_interd():
 
-    p, ctrl = dec_wrap2()
+
+    p, ctrl, cdict = dec_wrap2()
+    #p, ctrl = dec_wrap1()
 
 
     #graphs.delay(ctrl); graphs.show(); exit()
 
-    sim_object = SimWrap(p, ctrl)
-    sim_object.show_CFO = False
-    #sim_object.make_plots = False
-    sim_object.simulate()
+    sim = SimWrap(ctrl, p)
+    sim.set_all_nodisp()
+    sim.cdict = cdict
+
+    #sim.simulate()
+    sim.simmany()
 
 #-----------------------
 class SimWrap(lib.Struct):
@@ -177,22 +186,46 @@ class SimWrap(lib.Struct):
     show_TO = True # only works if make_plots is True
     show_SNR = True
     show_siglen = True
+    show_bary = False
+
+    cdict = dict()
+    pdict = dict()
+    
     
 
-    def __init__(self, p, ctrl):
+    def __init__(self, ctrl, p):
         """Prepares ctrl & p for simulation"""
         self.add(p=p)
         self.add(ctrl=ctrl)
-
-        lib.barywidth_map(self.p, reach=self.ctrl.bmap_reach , scaling_fct=self.ctrl.bmap_scaling , force_calculate=self.force_calculate, disp=True)
+        lib.barywidth_map(self.p, reach=self.ctrl.bmap_reach , scaling_fct=self.ctrl.bmap_scaling , force_calculate=self.force_calculate, disp=self.show_bary)
         if self.force_calculate:
             self.p.update()
             self.ctrl.update()
 
+    def update_params(self,  ctrl=None, p=None):
+        """Updates the params and runs barywidth_map if needed"""
+        # Check if barywidth update
+        if ctrl is None: ctrl = self.ctrl
+        if p is None: ctrl = self.p
+
+        do_bary = p != self.p or ctrl.bmap_reach != self.ctrl.bmap_reach or ctrl.bmap_scaling != self.ctrl.bmap_scaling
+        self.add(p=p)
+        self.add(ctrl=ctrl)
+
+        if do_bary: #Update barymap?
+            lib.barywidth_map(self.p, reach=self.ctrl.bmap_reach , scaling_fct=self.ctrl.bmap_scaling , force_calculate=self.force_calculate, disp=self.show_bary)
+
+    def set_all_nodisp(self):
+        """All display values are set to false"""
+        self.show_CFO = False
+        self.show_TO = False
+        self.show_SNR = False
+        self.show_siglen = False
+        self.show_bary = False
+        self.ctrl.display = False
+
     def simulate(self):
         """Simulate and run post-sim stuff, such as graphs or output saving"""
-
-        # Display SNR
         msg = ''
         siglen_value = "{:.2f}".format(len(self.p.analog_sig)/self.ctrl.basephi)
         if self.show_siglen: msg = 'Sync signal length: ' + siglen_value + ' basephi' + '    '
@@ -211,6 +244,60 @@ class SimWrap(lib.Struct):
         if self.make_plots:
             graphs.post_sim_graphs(self)
 
+    def simmany(self):
+        """Simulates many simulations according to the simdicts"""
+
+        while next(self.assign_next_all()):
+            print(self.cdict)
+
+        # TODO: add a warning when saveall isn't True!
+
+    def assign_next_all(self):
+        """Makes a generator of both ctrl and p. It iterates through cdict and pdict over all
+        lists at the same time
+
+        Note: Shorter lists are deleted when done. THe concerned variable will keep that final value
+        for future iteration"""
+        while self.cdict or self.pdict:
+            for d, obj in zip([self.cdict, self.pdict], [self.ctrl, self.p]):
+                todel = []
+                for key, lst in d.items():
+                    if lst:
+                        obj.change(key, lst.pop())
+                    if not lst: 
+                        todel.append(key)
+                for key in todel: 
+                    del d[key]
+            
+            yield True
+
+        yield False # When both dicts are empty,  return false.
+
+    def assign_next_one(self):
+        """Makes a generator of both ctrl and p. It iterates through cdict and pdict over all
+        lists at the same time
+
+        Note: Shorter lists are deleted when done. THe concerned variable will keep that final value
+        for future iteration"""
+        while self.cdict or self.pdict:
+            for d, obj in zip([self.cdict, self.pdict], [self.ctrl, self.p]):
+                todel = []
+                for key, lst in d.items():
+                    while lst: 
+                        obj.change(key, lst.pop())
+                        yield True
+                    if not lst: 
+                        todel.append(key)
+                for key in todel: 
+                    del d[key]
+            
+
+        yield False # When both dicts are empty,  return false.
+
+
+
+        
+    
 
 
 if __name__ == '__main__':

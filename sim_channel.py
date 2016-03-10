@@ -17,10 +17,16 @@ from numpy import pi
 from pprint import pprint
 
 
+NOSAVELIST = [
+    'TO',
+    'CFO'
+    ]
 
 #----------------------------------
 class SimControls(lib.Struct):
     """Container object for the control parameters of the runsim() function"""
+    need_update = ['basephi', 'chansize', 'phi_bounds', 'theta_bounds', 'echo_delay', 'echo_amp', 'nodecount', 'pdf_kwargs', 'max_echo_taps', 'delay_params']
+
     def __init__(self):
         """Default values"""
         self.steps = 30
@@ -74,6 +80,12 @@ class SimControls(lib.Struct):
         self.init_update = True
         self.saveall = False # This options also saves all fields in SyncParams to the control dict
 
+    def change(self, var, val):
+        """Changes a value of ctrl. If necessary, will run update"""
+        setattr(self, var, val)
+        if var in self.need_update:
+            self.update()
+
     def update(self):
         """Must be run before runsim can be executed"""
         self.chansize = int(self.basephi*self.steps)
@@ -87,6 +99,7 @@ class SimControls(lib.Struct):
         val_within_bounds(self.hd_slot1, [0,1] , 'hd_slot1')
         
         self.init_update = True
+
 
 def val_within_bounds(val, bounds, name):
     if val < bounds[0] or val > bounds[1]:
@@ -478,8 +491,10 @@ def runsim(p,ctrl):
         ctrl.phi_inter = phi_inter
 
     if ctrl.saveall:
-        del p.__dict__['TO']
         ctrl.add(**p.__dict__)
+        for var in NOSAVELIST:
+            del ctrl.__dict__[var]
+
         ctrl.pdf_kwargs = {'stuff':4}
 
 
