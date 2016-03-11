@@ -139,12 +139,12 @@ def dec_wrap2():
     ctrl.update()
 
     cdict = {
-        'nodecount':[3,4,5,6],
-        'rand_init':[True]*3 + [True],
+        'nodecount':[3,4],
+        'rand_init':[True]*2,
         }
 
     pdict = {
-        'zc_len':[100, 101, 102, 103],
+        'zc_len':[100, 101],
         }
 
     return p, ctrl, cdict, pdict
@@ -180,9 +180,12 @@ def main_interd():
     sim.pdict = pdict
 
     #sim.simulate()
-    sim.simmany('one')
+    sim.simmany('all')
 
 #-----------------------
+
+
+
 class SimWrap(lib.Struct):
     """Simulation object for ease of use"""
 
@@ -257,8 +260,15 @@ class SimWrap(lib.Struct):
 
     def simmany(self, assign_method='all'):
         """Simulates many simulations according to the simdicts"""
-        if self.ctrl.rand_init:
+        if not self.ctrl.rand_init:
             warnings.warn('Not using random initialization')
+
+        notsaveall_string = "Some simulations have the parameter set saveall parameter set to False"
+        if 'saveall' in self.cdict:
+            if False in self.cdict['saveall']:
+                warnings.warn(notsaveall_string)
+        elif not self.ctrl.saveall:
+            warnings.warn(notsaveall_string)
 
         if assign_method == 'all':
             assign_fct = self.assign_next_all

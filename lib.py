@@ -6,6 +6,7 @@ import math
 import warnings
 import time
 import inspect
+import os.path
 from sqlite3 import OperationalError
 
 from numpy import pi
@@ -25,6 +26,9 @@ INT_DTYPE = 'int64'
 
 #crosscorr_fct = lambda f,g,mode: fftconvolve(g, f.conjugate(),mode=mode)
 crosscorr_fct = lambda f,g,mode: np.correlate(g,f,mode=mode)
+
+BARY_SQL_TABLE_NAME = 'barywidths'
+BARY_DBASE_FILE = 'barywidths.sqlite'
 
 
 
@@ -265,9 +269,10 @@ def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=Fa
 
     scaling = reach/scaling_fct
 
-
-    dbase_file = 'barywidths.sqlite'
-    sql_table_name='barywidths'
+    sql_table_name = BARY_SQL_TABLE_NAME
+    dbase_file = BARY_DBASE_FILE
+    if not os.path.isfile(dbase_file):
+        db.init(dbase_file, sql_table_name)
     conn = db.connect(dbase_file)
     
     # Fetch all known barywidths

@@ -12,7 +12,6 @@ import lib
 
 # Default values
 DEF_TABLE = 'sim_results'
-DEF_SECONDARY_TABLE = 'barywidths'
 DEF_DB = 'simdb.sqlite'
 DEF_ASSOC_TABLE = 'type_assoc'
 
@@ -159,7 +158,7 @@ def clear_table(tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
 
     c.execute('DROP TABLE '+tn)
     c.execute('CREATE TABLE {tn} ({fn} {ft} PRIMARY KEY)'\
-              .format(tn=DEF_SECONDARY_TABLE, fn=field_name, ft=field_type))
+              .format(tn=tn, fn=field_name, ft=field_type))
     conn.commit()
 
     if close_conn:
@@ -176,9 +175,6 @@ def init(dbase_file=DEF_DB, table_name=DEF_TABLE):
     c.execute('CREATE TABLE {tn} ({fn} {ft} PRIMARY KEY)'\
               .format(tn=table_name, fn=field_name, ft=field_type))
 
-    # Initiate a secondary table
-    c.execute('CREATE TABLE {tn} ({fn} {ft} PRIMARY KEY)'\
-              .format(tn=DEF_SECONDARY_TABLE, fn=field_name, ft=field_type))
 
 
     type_assoc = {\
