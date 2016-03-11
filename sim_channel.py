@@ -25,7 +25,7 @@ NOSAVELIST = [
 #----------------------------------
 class SimControls(lib.Struct):
     """Container object for the control parameters of the runsim() function"""
-    need_update = ['basephi', 'chansize', 'phi_bounds', 'theta_bounds', 'echo_delay', 'echo_amp', 'nodecount', 'pdf_kwargs', 'max_echo_taps', 'delay_params']
+    need_update = ['basephi', 'chansize', 'phi_bounds', 'theta_bounds', 'echo_delay', 'echo_amp', 'nodecount', 'pdf_kwargs', 'delay_params']
 
     def __init__(self):
         """Default values"""
@@ -139,17 +139,9 @@ def runsim(p,ctrl):
 
 
     # IF echoes specified, to shove in array. OW, just don't worry about it
-    try:
-        echo_delay = ctrl.echo_delay
-        echo_amp = ctrl.echo_amp
-        max_echo_taps = ctrl.max_echo_taps
-    except KeyError:
-        max_echo_taps = 1
-        ctrl.max_taps = max_echo_taps
-        echo_delay = np.zeros((nodecount,nodecount,1), dtype='i8')
-        echo_amp = np.ones((nodecount,nodecount,1))
-        ctrl.echo_delay = echo_delay
-        ctrl.echo_amp = echo_amp
+    echo_delay = ctrl.echo_delay
+    echo_amp = ctrl.echo_amp
+    max_echo_taps = ctrl.delay_params.taps
     
     analog_pulse = p.analog_sig
 
@@ -495,7 +487,6 @@ def runsim(p,ctrl):
         for var in NOSAVELIST:
             del ctrl.__dict__[var]
 
-        ctrl.pdf_kwargs = {'stuff':4}
 
 
 

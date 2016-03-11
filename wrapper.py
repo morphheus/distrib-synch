@@ -141,10 +141,13 @@ def dec_wrap2():
     cdict = {
         'nodecount':[3,4,5,6],
         'rand_init':[True]*3 + [True],
-        'saveall':[False, False]
         }
 
-    return p, ctrl, cdict
+    pdict = {
+        'zc_len':[100, 101, 102, 103],
+        }
+
+    return p, ctrl, cdict, pdict
 
 #------------------------
 def main_thesis():
@@ -163,18 +166,21 @@ def main_thesis():
 def main_interd():
 
 
-    p, ctrl, cdict = dec_wrap2()
+    p, ctrl, cdict, pdict = dec_wrap2()
     #p, ctrl = dec_wrap1()
 
 
     #graphs.delay(ctrl); graphs.show(); exit()
 
     sim = SimWrap(ctrl, p)
-    sim.set_all_nodisp()
+    #sim.set_all_nodisp()
+    sim.show_CFO = False
+    sim.show_TO = False
     sim.cdict = cdict
+    sim.pdict = pdict
 
     #sim.simulate()
-    sim.simmany()
+    sim.simmany('one')
 
 #-----------------------
 class SimWrap(lib.Struct):
@@ -187,6 +193,7 @@ class SimWrap(lib.Struct):
     show_SNR = True
     show_siglen = True
     show_bary = False
+    repeat = 1
 
     cdict = dict()
     pdict = dict()
@@ -213,8 +220,12 @@ class SimWrap(lib.Struct):
         self.add(ctrl=ctrl)
 
         if do_bary: #Update barymap?
-            lib.barywidth_map(self.p, reach=self.ctrl.bmap_reach , scaling_fct=self.ctrl.bmap_scaling , force_calculate=self.force_calculate, disp=self.show_bary)
+            self.update_bary()
 
+    def update_bary(self):
+        """Triggers the update of the barywidth map"""
+        lib.barywidth_map(self.p, reach=self.ctrl.bmap_reach , scaling_fct=self.ctrl.bmap_scaling , force_calculate=self.force_calculate, disp=self.show_bary)
+        
     def set_all_nodisp(self):
         """All display values are set to false"""
         self.show_CFO = False
@@ -244,11 +255,21 @@ class SimWrap(lib.Struct):
         if self.make_plots:
             graphs.post_sim_graphs(self)
 
-    def simmany(self):
+    def simmany(self, assign_method='all'):
         """Simulates many simulations according to the simdicts"""
+        if self.ctrl.rand_init:
+            warnings.warn('Not using random initialization')
 
-        while next(self.assign_next_all()):
-            print(self.cdict)
+        if assign_method == 'all':
+            assign_fct = self.assign_next_all
+        elif assign_method == 'one':
+            assign_fct = self.assign_next_one
+        else:
+            raise ValueError('Invalid assign method')
+
+        while next(assign_fct()):
+            for k in range(self.repeat):
+                self.simulate()
 
         # TODO: add a warning when saveall isn't True!
 
@@ -269,6 +290,7 @@ class SimWrap(lib.Struct):
                 for key in todel: 
                     del d[key]
             
+            self.update_bary()
             yield True
 
         yield False # When both dicts are empty,  return false.
@@ -285,6 +307,7 @@ class SimWrap(lib.Struct):
                 for key, lst in d.items():
                     while lst: 
                         obj.change(key, lst.pop())
+                        self.update_bary()
                         yield True
                     if not lst: 
                         todel.append(key)
