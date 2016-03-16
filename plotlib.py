@@ -85,6 +85,21 @@ def continuous(*args, label='curve0', axes=None):
 
     return ax
 
+def scatter(x, y, yerr, x_label='', y_label='',axes=None, savename=''):
+    """Scatter plot, with errorbars if specified"""
+
+    if axes == None:
+        ax = plt.axes()
+    else:
+        ax = axes
+
+    lh = ax.errorbar(x, y, yerr, fmt='.', color='k', capsize=0 )
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+
+    save(savename)
+    return ax
+
 def surface3d(x,y,z, density=20, **kwargs):
     """3d plot of the x, y vectors and z 2d array"""
 
@@ -364,7 +379,7 @@ def pulse(p, axes=None, savename=''):
     return ax
 
 def delay(ctrl, axes=None, savename=''):
-    """Plots the PDF of the delay params"""
+    """Plots the PDF of the ctrl structure"""
     obj = ctrl.delay_params
     fct = obj.delay_pdf_eval
 
@@ -383,7 +398,7 @@ def delay(ctrl, axes=None, savename=''):
     ax.set_ylabel('Amplitude')
     return ax
 
-#----------------
+#----- CATTED GRAPHS
 def cat_graphs(graphs, rows=2,subplotsize=(9,5), savename=''):
     """Concatenate the figures together together
     graphlist: list of tuples of (fct name, args, kwarg)"""
@@ -439,6 +454,8 @@ def all_graphs(p,ctrl=None):
                         ))
 
     cat_graphs(glist)
+
+#----- AGGREGATION GRAPHS
 
 
 

@@ -31,14 +31,12 @@ def set_table(table):
 
 #---------------------------
 def build_timestamp_id():
-    """Builds a timestamp, and appens a random 3 digit number after it"""
-    tempo = time.localtime()
-    vals = ['year', 'mon', 'mday', 'hour', 'min', 'sec']
-    vals = ['tm_' + x for x in vals]
-
-    tstr = [str(getattr(tempo,x)).zfill(2) for x in vals]
-
-    return int(''.join(tstr) + str(np.random.randint(999)).zfill(3))
+    """Builds a timestamp, including the """
+    now = time.time()
+    localtime = time.localtime(now)
+    tstr = time.strftime('%Y%m%d%H%M%S', localtime)
+    msstr = "%03d"%((now%1)*1000)
+    return tstr + msstr
 
 def pprint_date(date):
     """Pretty prints the dateid"""
@@ -371,6 +369,37 @@ def fetch_matching(entry_dict, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False, get_
 def fetchone(date, column , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
     return fetch_cols(date, [column] , tn=tn, dbase_file=dbase_file, conn=conn)[0]
 
+def fetch_range(dates, collist , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
+    """Fetches the columns corresponding to the list of dates"""
+    close_conn = False
+    if conn == False: 
+        conn = connect(dbase_file)
+        closeconn = True
+
+    c = conn.cursor()
+
+    if collist is None:
+        colstring = '*'
+    else:
+        colstring = ','.join(collist)
+
+    if len(dates) != 2:
+        raise ValueError('Expected the first argument to be an iterable of length 2')
+    
+    lo = dates[0]
+    hi = dates[1]
+    string = "SELECT "+colstring+" FROM "+tn+" WHERE date BETWEEN "+str(lo)+" AND "+str(hi)
+    cursor = c.execute(string)
+
+    output = cursor.fetchall()
+
+    
+    if close_conn:
+        conn.close()
+
+    return output
+
+
 def fetch_cols(date, collist , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
     """Fetches the columns in collist"""
     close_conn = False
@@ -388,6 +417,39 @@ def fetch_cols(date, collist , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
         conn.close()
 
     return c.fetchall()[0]
+
+def fetch_last_n(n, collist=None, asdict=False, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False, dateid=True):
+    """Fetches the n most recent entries in the table"""
+    close_conn = False
+    if conn == False: 
+        conn = connect(dbase_file)
+        closeconn = True
+
+    c = conn.cursor()
+
+    if collist is None:
+        colstring = '*'
+    else:
+        colstring = 'date,' if dateid else ''
+        colstring += ','.join(collist)
+    
+    string = "SELECT " + colstring + " FROM " + tn + " ORDER BY date DESC LIMIT " + str(n)
+    cursor = c.execute(string)
+
+    if not asdict:
+        output = cursor.fetchall()
+    else:
+        colname = [ d[0] for d in cursor.description ]
+        output = [ dict(zip(colname, r)) for r in cursor.fetchall() ]
+
+    
+    if close_conn:
+        conn.close()
+
+    return output
+
+
+
 
 
 

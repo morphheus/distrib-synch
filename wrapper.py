@@ -8,7 +8,7 @@ import lib
 import numpy as np
 import warnings
 import inspect
-
+import time
 
 from sim_channel import runsim, SimControls
 
@@ -90,21 +90,22 @@ def dec_wrap2():
 
 
     ctrl = SimControls()
-    ctrl.steps = 60 # Approx number of emissions per node
-    ctrl.basephi = 8000 # How many samples between emission
+    ctrl.steps = 10 # Approx number of emissions per node
+    ctrl.basephi = 5000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
-    ctrl.keep_intermediate_values = True # Needed to draw graphs
+    ctrl.keep_intermediate_values = False # Needed to draw graphs
     ctrl.nodecount = 4 # Number of nodes
-    ctrl.static_nodes = 2
+    ctrl.static_nodes = 1
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
-    ctrl.TO_step_wait = 1
-    ctrl.max_start_delay = 15 # In factor of basephi
+    ctrl.TO_step_wait = 8
+    ctrl.max_start_delay = 2 # In factor of basephi
 
     ctrl.theta_bounds = [0.3,0.7] # In units of phi
-    ctrl.theta_bounds = [0.5,0.5] # In units of phi
+    ctrl.theta_bounds = [0.48,0.52] # In units of phi
+    #ctrl.theta_bounds = [0.5,0.5] # In units of phi
     #ctrl.deltaf_bound = 3e-6
     ctrl.deltaf_bound = 0
-    ctrl.noise_var = 1
+    ctrl.noise_var = 2.8
     ctrl.rand_init = True
     ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
 
@@ -139,13 +140,10 @@ def dec_wrap2():
     ctrl.update()
 
     cdict = {
-        'nodecount':[3,4],
-        'rand_init':[True]*2,
+        'nodecount':[x for x in range(5,15)]
         }
 
-    pdict = {
-        'zc_len':[100, 101],
-        }
+    pdict = {}
 
     return p, ctrl, cdict, pdict
 
@@ -172,15 +170,31 @@ def main_interd():
 
     #graphs.delay(ctrl); graphs.show(); exit()
 
-    sim = SimWrap(ctrl, p)
-    #sim.set_all_nodisp()
-    sim.show_CFO = False
-    sim.show_TO = False
-    sim.cdict = cdict
-    sim.pdict = pdict
+    sim = SimWrap(ctrl, p, cdict, pdict)
+    sim.set_all_nodisp()
+    sim.make_plots = False
+    sim.repeat = 2
 
-    #sim.simulate()
-    sim.simmany('all')
+
+
+    #sim.simulate(); exit()
+    tsims = sim.total_sims('all')
+    dates = sim.simmany('all'); 
+
+    collist = ['nodecount', 'theta_ssstd']
+    #db_out = np.array(db.fetch_last_n(tsims, ['nodecount', 'theta_ssstd'], dateid=True))
+    #dates, data = np.split(db_out, [1,], axis=1); dates = dates.astype(int)
+    data = np.array(db.fetch_range([dates[-1], dates[0]], collist))
+
+    x, y, ystd = lib.avg_copies(data)
+    
+    savename = 'graphdump/'
+    savename += 'stuff'
+    #savename += '_' + str(dates[0,0])[4:]
+    savename += '_' + str(dates[0])[4:]
+    graphs.scatter(x, y, ystd, 'nodecount', 'theta_std (samples)', savename=savename)
+    graphs.show()
+
 
 #-----------------------
 
@@ -197,13 +211,14 @@ class SimWrap(lib.Struct):
     show_siglen = True
     show_bary = False
     repeat = 1
+    last_msg_len = 0
 
     cdict = dict()
     pdict = dict()
     
     
 
-    def __init__(self, ctrl, p):
+    def __init__(self, ctrl, p, cdict=None, pdict=None):
         """Prepares ctrl & p for simulation"""
         self.add(p=p)
         self.add(ctrl=ctrl)
@@ -211,6 +226,10 @@ class SimWrap(lib.Struct):
         if self.force_calculate:
             self.p.update()
             self.ctrl.update()
+        if cdict is not None:
+            self.cdict=cdict
+        if pdict is not None:
+            self.pdict=pdict
 
     def update_params(self,  ctrl=None, p=None):
         """Updates the params and runs barywidth_map if needed"""
@@ -277,11 +296,29 @@ class SimWrap(lib.Struct):
         else:
             raise ValueError('Invalid assign method')
 
+        oprint = lambda x: print(x, end='\r')
+        tf = time.clock
+        tsims = self.total_sims(assign_method)
+        count = 0
+        t0 = tf()
+
+        # Main loop
         while next(assign_fct()):
             for k in range(self.repeat):
+                msg = "Iteration " + str(count).zfill(len(str(tsims))) + " of " + str(tsims) + '. ' 
+                msg += "%2.2f"%(count*100/tsims) + "% done"
+                oprint(msg)
+                count += 1
                 self.simulate()
+        oprint(' '*len(msg))
+        print('Done simmany in ' + "%2.2f"%(tf()-t0) + ' seconds.')
 
-        # TODO: add a warning when saveall isn't True!
+        # Logging the dateid set
+        dates = np.array(db.fetch_last_n(tsims, ['date'], dateid=False)).flatten()
+        lib.appendlog('Done ' + str(tsims) + ' simulations: ' +\
+                      str(dates[-1]) + ' to ' + str(dates[0]))
+
+        return dates
 
     def assign_next_all(self):
         """Makes a generator of both ctrl and p. It iterates through cdict and pdict over all
@@ -327,9 +364,25 @@ class SimWrap(lib.Struct):
 
         yield False # When both dicts are empty,  return false.
 
+    def total_sims(self, assign_method='all'):
+        """Returns the total number of simulations that will be executed based on the # of elements in cdict/pdict"""
+        count = 0
+        if assign_method=='all':
+            max_len = 0
+            for d in [self.pdict, self.cdict]:
+                for key, lst in d.items():
+                    if len(lst) > max_len:
+                        max_len = len(lst)
+            count = max_len
 
-
+        elif assign_method=='one':
+            for d in [self.pdict, self.cdict]:
+                for key, lst in d.items():
+                    count += len(lst)
         
+        return count*self.repeat
+
+
     
 
 

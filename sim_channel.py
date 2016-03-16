@@ -475,6 +475,9 @@ def runsim(p,ctrl):
     ctrl.theta = theta
     ctrl.deltaf = deltaf
     ctrl.phi = phi
+    ctrl.theta_ssstd = np.std(theta)
+    ctrl.deltaf_ssstd = np.std(deltaf)
+    ctrl.phi_ssstd = np.std(phi)
 
     if ctrl.keep_intermediate_values:
         ctrl.sample_inter = sample_inter

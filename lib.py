@@ -30,6 +30,7 @@ crosscorr_fct = lambda f,g,mode: np.correlate(g,f,mode=mode)
 BARY_SQL_TABLE_NAME = 'barywidths'
 BARY_DBASE_FILE = 'barywidths.sqlite'
 
+LAST_PRINT_LEN = 0
 
 
 #--------------------
@@ -702,6 +703,41 @@ def appendlog(logdesc):
     with open(LOGFILE, 'a+') as f:
         f.write(logmsg)
 
+def avg_copies(data):
+    """Calculates the average and STD of all dependent values.
+    data: list of tuples or array
+    Expected data structure:
+    [(x0, y0, z0, a0, ...), (x1, y1, z1, a1, ...), ...]"""
+    if type(data).__name__ != 'ndarray':
+        arr = np.array(data)
+    else:
+        arr = data.copy()
+
+    # Make sure all the repeaded x values are grouped together
+    #np.random.shuffle(arr)
+    arr = arr[arr[:,0].argsort()]
+
+    # Index of unique indices
+    _, unique_idx = np.unique(arr[:,0], return_index=True)
+    indeps = arr[unique_idx, 0].copy()
+    unique_idx = np.append(unique_idx, data.shape[0])
+    xcount = len(unique_idx)-1
+
+    # Calculate average and std of all data associated with each x
+    stds = np.empty([xcount, arr.shape[1]-1], dtype=arr.dtype)
+    avgs = np.empty([xcount, arr.shape[1]-1], dtype=arr.dtype)
+    for k in range(xcount):
+        currslice = slice(unique_idx[k], unique_idx[k+1])
+        stds[k,:] = np.std(arr[currslice, 1:])
+        avgs[k,:] = np.mean(arr[currslice, 1:])
+
+    # If 1-d array, flatten 
+    if stds.shape[1] == 1: stds = stds.flatten()
+    if avgs.shape[1] == 1: avgs = avgs.flatten()
+
+    return indeps, avgs, stds
+
+
 
 ##########################
 # CLASSDEFS
@@ -714,10 +750,6 @@ class Struct:
     def __iter__(self):
         for name, val in self.__dict__.items():
             yield name, val
-
-    def print_all_items(self):
-        for name,val in self:
-            print(name + '\n' + str(val)+ '\n')
 
 class DelayParams(Struct):
     """Parameters class for the delays between nodes"""
@@ -733,7 +765,6 @@ class DelayParams(Struct):
         self.t0 = t0
         self.sigma = sigma
 
-    
     def delay_pdf_eval(self, t, **kwargs):
         return self.delay_pdf(t, self.sigma, self.t0, **kwargs)
 
