@@ -7,6 +7,7 @@ import warnings
 import time
 import inspect
 import os.path
+import string
 from sqlite3 import OperationalError
 
 from numpy import pi
@@ -31,6 +32,8 @@ BARY_SQL_TABLE_NAME = 'barywidths'
 BARY_DBASE_FILE = 'barywidths.sqlite'
 
 LAST_PRINT_LEN = 0
+
+BASE62_ALPHABET =  string.digits + string.ascii_uppercase + string.ascii_lowercase
 
 
 #--------------------
@@ -686,6 +689,34 @@ def ll_redux_2d(p,t0,l0, theta_range, deltaf_range, var_w=1):
 def build_timestamp_id():
     """Builds a timestamp, and appens a random 3 digit number after it"""
     return db.build_timestamp_id()
+
+def base62_encode(integer):
+    """Contracts some integer in base 62"""
+    alpha = BASE62_ALPHABET
+    base = len(alpha)
+
+    if integer == 0: return alpha[0]
+
+    tmp = integer
+    encoded = ''
+    while tmp != 0:
+        encoded += alpha[tmp % base]
+        tmp = tmp // base
+
+    return encoded[::-1]
+
+def base62_decode(encoded):
+    """Contracts some integer in base 62"""
+    alpha = BASE62_ALPHABET
+    base = len(alpha)
+
+    decoded = 0
+    for k, char in enumerate(encoded[::-1]):
+        decoded += base**k*alpha.index(char)
+
+    return decoded
+
+
 
 def appendlog(logdesc):
     """Appends the text to the logfile"""

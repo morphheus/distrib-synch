@@ -3,6 +3,7 @@
 from sim_channel import SimControls
 from lib import barywidth_map, calc_both_barycenters
 import lib
+import dumbsqlite3 as db
 
 import math
 import warnings
@@ -15,6 +16,7 @@ with warnings.catch_warnings():
     from mpl_toolkits.mplot3d import Axes3D
 
 GRAPH_OUTPUT_LOCATION = 'graphs/' # don't forget the trailing slash
+GRAPHDUMP_OUTPUT_LOCATION = 'graphdump/' # don't forget the trailing slash
 GRAPH_OUTPUT_FORMAT = 'eps'
 
 matplotlib.rcParams.update({'font.size': 14})
@@ -455,8 +457,22 @@ def all_graphs(p,ctrl=None):
 
     cat_graphs(glist)
 
-#----- AGGREGATION GRAPHS
+#----- SIMBD GRAPHS
+def scatter_range(dates, collist, axes=None, savename=''):
+    """Scatterplot of the collist of the dates range given."""
+    if len(collist) != 2:
+        raise ValueError("Expected two entries in collist")
 
+    tmp = sorted(dates)
+    data = np.array(db.fetch_range(tmp, collist))
+
+    x, y, ystd = lib.avg_copies(data)
+    sname = GRAPHDUMP_OUTPUT_LOCATION + '-'.join(collist) +\
+            '_' + '-'.join([lib.base62_encode(x) for x in tmp])
+
+    ax = scatter(x, y, ystd, collist[0], collist[1], savename=sname)
+
+    return ax
 
 
 

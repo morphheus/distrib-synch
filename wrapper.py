@@ -173,15 +173,20 @@ def main_interd():
     sim = SimWrap(ctrl, p, cdict, pdict)
     sim.set_all_nodisp()
     sim.make_plots = False
-    sim.repeat = 2
+    sim.repeat = 1
 
 
 
     #sim.simulate(); exit()
     tsims = sim.total_sims('all')
-    dates = sim.simmany('all'); 
-
+    #dates = sim.simmany('all'); dates = [dates[0], dates[-1]]
+    dates = [20160316135854599,  20160316135906136]
     collist = ['nodecount', 'theta_ssstd']
+    graphs.scatter_range(dates, collist)
+    graphs.show()
+
+
+    exit()
     #db_out = np.array(db.fetch_last_n(tsims, ['nodecount', 'theta_ssstd'], dateid=True))
     #dates, data = np.split(db_out, [1,], axis=1); dates = dates.astype(int)
     data = np.array(db.fetch_range([dates[-1], dates[0]], collist))
