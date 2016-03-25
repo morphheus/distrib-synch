@@ -90,23 +90,23 @@ def dec_wrap2():
 
 
     ctrl = SimControls()
-    ctrl.steps = 10 # Approx number of emissions per node
+    ctrl.steps = 40 # Approx number of emissions per node
     ctrl.basephi = 5000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = False # Needed to draw graphs
-    ctrl.nodecount = 4 # Number of nodes
-    ctrl.static_nodes = 1
+    ctrl.nodecount = 5 # Number of nodes
+    ctrl.static_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
-    ctrl.TO_step_wait = 8
-    ctrl.max_start_delay = 2 # In factor of basephi
+    ctrl.TO_step_wait = 0
+    ctrl.max_start_delay = 0 # In factor of basephi
 
     ctrl.theta_bounds = [0.3,0.7] # In units of phi
     ctrl.theta_bounds = [0.48,0.52] # In units of phi
     #ctrl.theta_bounds = [0.5,0.5] # In units of phi
     #ctrl.deltaf_bound = 3e-6
     ctrl.deltaf_bound = 0
-    ctrl.noise_var = 2.8
-    ctrl.rand_init = True
+    ctrl.noise_var = 0.01
+    ctrl.rand_init = False
     ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
 
     ctrl.bmap_reach = 3e-6
@@ -118,9 +118,8 @@ def dec_wrap2():
     ctrl.max_CFO_correction = 1e-6 # As a factor of f_symb
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_exp)
-    ctrl.delay_params.t0 = 0
     ctrl.delay_params.taps = 1
-    ctrl.delay_params.sigma = 0
+    ctrl.delay_params.sigma = 0.02
 
     ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
@@ -165,22 +164,29 @@ def main_interd():
 
 
     p, ctrl, cdict, pdict = dec_wrap2()
+    sim = SimWrap(ctrl, p, cdict, pdict)
     #p, ctrl = dec_wrap1()
 
 
-    #graphs.delay(ctrl); graphs.show(); exit()
+    #graphs.delay_pdf(ctrl); graphs.show(); exit()
+    #graphs.delay_grid(ctrl); graphs.show(); exit()
+    sim.ctrl.keep_intermediate_values = True
+    sim.show_CFO = False
+    sim.make_plots = False 
+    sim.simulate()
+    sim.eval_convergence()
+    exit()
 
-    sim = SimWrap(ctrl, p, cdict, pdict)
     sim.set_all_nodisp()
     sim.make_plots = False
-    sim.repeat = 1
+    sim.repeat = 4
 
 
 
-    #sim.simulate(); exit()
+
     tsims = sim.total_sims('all')
-    #dates = sim.simmany('all'); dates = [dates[0], dates[-1]]
-    dates = [20160316135854599,  20160316135906136]
+    dates = sim.simmany('all'); dates = [dates[0], dates[-1]]
+    #dates = [20160316135854599,  20160316135906136]
     collist = ['nodecount', 'theta_ssstd']
     graphs.scatter_range(dates, collist)
     graphs.show()
@@ -220,8 +226,12 @@ class SimWrap(lib.Struct):
 
     cdict = dict()
     pdict = dict()
+
+    #Convergence criterions
+    conv_eval_cfo = False
+    conv_min_slope_samples = 5 # Minimum # of samples to take for slope eval
     
-    
+
 
     def __init__(self, ctrl, p, cdict=None, pdict=None):
         """Prepares ctrl & p for simulation"""
@@ -252,7 +262,7 @@ class SimWrap(lib.Struct):
     def update_bary(self):
         """Triggers the update of the barywidth map"""
         lib.barywidth_map(self.p, reach=self.ctrl.bmap_reach , scaling_fct=self.ctrl.bmap_scaling , force_calculate=self.force_calculate, disp=self.show_bary)
-        
+
     def set_all_nodisp(self):
         """All display values are set to false"""
         self.show_CFO = False
@@ -387,8 +397,42 @@ class SimWrap(lib.Struct):
         
         return count*self.repeat
 
+    def eval_convergence(self, disp=True):
+        """Evaluates if convergence has been achieved"""
+        if not self.ctrl.simulated:
+            raise Exception("Function must be executed after a simulation has been done")
 
-    
+        output = {}
+
+        def drift_eval(lst):
+            """Calculates the average slope for the last self.min_slope_samples"""
+            min_len = min([len(x) for x in lst])
+            datacount = self.conv_min_slope_samples
+            if datacount > min_len:
+                datacount = min_len
+                warnings.warn('slope domain bigger than minimum domain; not enough intermediate samples')
+            #extract the relevant samples
+            data = np.zeros([len(lst), datacount])
+            for k,sublist in enumerate(lst):
+                data[k,:] = np.array(sublist[-datacount:])
+
+            # Calculate slope
+            slopes = np.ediff1d(np.mean(data, axis=0))
+            return np.mean(slopes), np.std(slopes)
+
+        # Evaluate drift slope over the last domain% or 5 intermediate vals
+        tlist = self.ctrl.theta_inter
+        clist = self.ctrl.deltaf_inter
+
+        output['theta_drift'] = drift_eval(tlist)
+        if self.conv_eval_cfo:
+            output['deltaf_drift'] = drift_eval(dlist)
+
+        # Evaluate communication capabilites between all nodes 
+        theta = self.ctrl.theta
+        tmp_del_grid = (self.ctrl.delay_params.delay_grid*self.ctrl.basephi).astype(theta.dtype)
+        offset_grid = np.tile(theta.reshape(-1,1), theta.shape[0])
+        offset_grid +=  -1*offset_grid.T - tmp_del_grid
 
 
 if __name__ == '__main__':

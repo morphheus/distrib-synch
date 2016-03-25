@@ -26,6 +26,7 @@ NOSAVELIST = [
 class SimControls(lib.Struct):
     """Container object for the control parameters of the runsim() function"""
     need_update = ['basephi', 'chansize', 'phi_bounds', 'theta_bounds', 'echo_delay', 'echo_amp', 'nodecount', 'pdf_kwargs', 'delay_params']
+    simulated = False
 
     def __init__(self):
         """Default values"""
@@ -91,7 +92,14 @@ class SimControls(lib.Struct):
         self.chansize = int(self.basephi*self.steps)
         self.phi_minmax = [round(x*self.basephi) for x in self.phi_bounds]
         self.theta_minmax = [round(x*self.basephi) for x in self.theta_bounds]
+
+        if not self.rand_init:
+            np.random.seed(self.non_rand_seed)
+
         self.echo_delay, self.echo_amp = self.delay_params.build_delay_matrix(self.nodecount, self.basephi, **self.pdf_kwargs)
+
+        if not self.rand_init:
+            np.random.seed()
         
         # Input protection
         val_within_bounds(self.max_start_delay, [0,float('inf')] , 'max_start_delay')
@@ -478,6 +486,7 @@ def runsim(p,ctrl):
     ctrl.theta_ssstd = np.std(theta)
     ctrl.deltaf_ssstd = np.std(deltaf)
     ctrl.phi_ssstd = np.std(phi)
+    ctrl.simulated = True
 
     if ctrl.keep_intermediate_values:
         ctrl.sample_inter = sample_inter

@@ -380,7 +380,7 @@ def pulse(p, axes=None, savename=''):
     save(savename)
     return ax
 
-def delay(ctrl, axes=None, savename=''):
+def delay_pdf(ctrl, axes=None, savename=''):
     """Plots the PDF of the ctrl structure"""
     obj = ctrl.delay_params
     fct = obj.delay_pdf_eval
@@ -398,6 +398,18 @@ def delay(ctrl, axes=None, savename=''):
     ax = continuous(x,y,axes=axes)
     ax.set_xlabel('Delay (Samples)')
     ax.set_ylabel('Amplitude')
+    return ax
+
+def delay_grid(ctrl, axes=None, savename=''):
+    """Plots the PDF of the ctrl structure"""
+    obj = ctrl.delay_params
+    fct = obj.delay_pdf_eval
+
+    x,y = [k*ctrl.basephi for k in [obj.gridx, obj.gridy]]
+
+    ax = scatter(x,y, 0,axes=axes)
+    ax.set_xlabel('x-axis (Samples)')
+    ax.set_ylabel('y-axis (Samples)')
     return ax
 
 #----- CATTED GRAPHS

@@ -799,7 +799,7 @@ class DelayParams(Struct):
     def delay_pdf_eval(self, t, **kwargs):
         return self.delay_pdf(t, self.sigma, self.t0, **kwargs)
 
-    def rnd_delay(self, **kwargs):
+    def rnd_delay(self,t0, **kwargs):
         """Builds an array of delays with the associated amplitudes. Uniformly picks the delays,
         then feeds it into the PDF function. All time values in terms of basephi.
         input:
@@ -810,7 +810,7 @@ class DelayParams(Struct):
             delay: np array of the delays
             amps:  np array of the amplitudes
         """
-        delay_list = [np.random.rand()*np.sqrt(12)*self.sigma+self.t0 for x in range(self.taps)]
+        delay_list =[t0] +  [np.random.rand()*np.sqrt(12)*self.sigma+t0 for x in range(self.taps-1)]
         amp_list = [self.delay_pdf_eval(t, **kwargs) for t in delay_list]
         delay = np.array(delay_list, FLOAT_DTYPE)
         amp = np.array(amp_list, FLOAT_DTYPE)
@@ -822,11 +822,17 @@ class DelayParams(Struct):
         echoes = np.zeros((nodecount, nodecount, self.taps), dtype=array_dtype_string)
         echoes.dtype.names = ('delay', 'amp')
 
+        # Build delay grid 
+        tiled = lambda x: np.tile(x, x.shape[0])
+        self.gridx, self.gridy = [np.random.rand(nodecount, 1)*np.sqrt(12)*self.sigma/np.sqrt(2) for x in range(2)]
+        tx, ty = (tiled(self.gridx), tiled(self.gridy))
+        self.delay_grid = np.sqrt((tx - tx.T)**2 + (ty - ty.T)**2)
+
         for k in range(nodecount):
             for l in range(nodecount):
                 if k == l:
                     continue
-                delay, amp = self.rnd_delay(**kwargs)
+                delay, amp = self.rnd_delay(self.delay_grid[k,l], **kwargs)
                 echoes['delay'][k][l] = (delay*basephi).astype(INT_DTYPE)
                 echoes['amp'][k][l] = amp
 
