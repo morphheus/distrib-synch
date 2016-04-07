@@ -8,6 +8,8 @@ import dumbsqlite3 as db
 import math
 import warnings
 import numpy as np
+from scipy import signal
+from numpy import pi
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore",category=PendingDeprecationWarning)
@@ -157,7 +159,7 @@ def post_sim_graphs(simwrap):
     else: plt.close(plt.gcf())
 
     # TO graphs
-    hair(ctrl.sample_inter , ctrl.theta_inter , y_label='TO', savename='lastTO'); 
+    hair(ctrl.sample_inter, ctrl.theta_inter , y_label='TO', savename='lastTO'); 
     if simwrap.show_TO: show()
 
 def barywidth(*args, axes=None, savename='', fit_type='order2', residuals=True, disp=True, **kwargs):
@@ -400,16 +402,55 @@ def delay_pdf(ctrl, axes=None, savename=''):
     ax.set_ylabel('Amplitude')
     return ax
 
-def delay_grid(ctrl, axes=None, savename=''):
+def delay_grid(ctrl, unit='km', axes=None, savename=''):
     """Plots the PDF of the ctrl structure"""
     obj = ctrl.delay_params
     fct = obj.delay_pdf_eval
 
     x,y = [k*ctrl.basephi for k in [obj.gridx, obj.gridy]]
+    lims = [sign*0.55*obj.width*ctrl.basephi for sign in [-1,1]]
+
+    # convert to requested unit
+    x,y = [lib.samples2dist(k, ctrl.f_samp, unit) for k in [x,y]]
+    lims = [lib.samples2dist(k, ctrl.f_samp, unit) for k in lims]
 
     ax = scatter(x,y, 0,axes=axes)
-    ax.set_xlabel('x-axis (Samples)')
-    ax.set_ylabel('y-axis (Samples)')
+    ax.set_xlabel('x-axis (' + unit + ')')
+    ax.set_ylabel('y-axis (' + unit + ')')
+    ax.set_xlim(lims)
+    ax.set_ylim(lims)
+    return ax
+
+def node_multitaps(ctrl, nodes=(0,1), unit='samples',  axes=None, savename=''):
+    """Plots the multipath taps between of the requested nodes. taps from node[0] to node[1]"""
+    #x = lib.samples2dist(ctrl.echo_delay, ctrl.f_samp, unit)
+    x = ctrl.echo_delay[nodes]
+    y = np.abs(ctrl.echo_amp[nodes])
+    #y = np.zeros(len(x))
+
+    ax = scatter(x,y, 0,axes=axes)
+    ax.set_xlabel('x-axis (' + unit + ')')
+    ax.set_ylabel('y-axis (' + unit + ')')
+    return ax
+
+def freq_response(b,a, axes=None, savename=''):
+    """Plots the frequency response of the highpass filter specified in lib"""
+    freq, response = signal.freqz(b,a)
+    x, y = (freq, response)
+    #a = 1
+    #b = np.hstack((1,-1*karr))
+    #x, y = scipy.signal.freqz(b,a)
+    print(b)
+    print(a)
+
+    x /= pi
+
+    y2 = 20*np.log10(np.abs(y)/max(np.abs(y)))
+    #ax = continuous(x,y2,axes=axes)
+    ax = continuous(x,np.abs(y),axes=axes)
+    #ax.set_yscale('log')
+    ax.set_xlabel('Angular frequency (pi)')
+    ax.set_ylabel('Frequency Response')
     return ax
 
 #----- CATTED GRAPHS
@@ -481,6 +522,7 @@ def scatter_range(dates, collist, axes=None, savename=''):
     x, y, ystd = lib.avg_copies(data)
     sname = GRAPHDUMP_OUTPUT_LOCATION + '-'.join(collist) +\
             '_' + '-'.join([lib.base62_encode(x) for x in tmp])
+
 
     ax = scatter(x, y, ystd, collist[0], collist[1], savename=sname)
 

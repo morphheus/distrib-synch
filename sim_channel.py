@@ -76,6 +76,10 @@ class SimControls(lib.Struct):
         self.vw_hithreshold = 0.1 # winlen increase threshold
         self.vw_lofactor = 1.5 # winlen reduction factor
         self.vw_hifactor = 2 # winlen increase factor
+        # Propagation delay correction
+        self.pc_step_wait = 20
+        self.pc_b, self.pc_a = lib.hipass_avg(5)
+        self.pc_std_thresh = float('inf')
 
         # Other
         self.init_update = True
@@ -144,6 +148,8 @@ def runsim(p,ctrl):
     CFO_processing_avgwindow = ctrl.CFO_processing_avgwindow
     phi_minmax = ctrl.phi_minmax
     theta_minmax = ctrl.theta_minmax
+    pc_b = ctrl.pc_b
+    pc_a = ctrl.pc_a
 
 
     # IF echoes specified, to shove in array. OW, just don't worry about it
@@ -192,7 +198,14 @@ def runsim(p,ctrl):
     nodes_winlen = np.array([ctrl.chansize]*nodecount, dtype=lib.INT_DTYPE)
     hd_sync_slot = np.array([0 if k%2 else 1 for k in range(nodecount)])
     nodetype = np.array(['static']*ctrl.static_nodes + ['variable']*(nodecount-ctrl.static_nodes))
-    next_event = np.array(['emit' if x=='static' else 'adjust' for x in nodetype])
+    prev_TOx = [collections.deque(np.zeros(len(pc_b)),len(pc_b)) for k in range(nodecount)]
+    prev_TOy = [collections.deque(np.zeros(len(pc_a)-1),len(pc_a)-1) for k in range(nodecount)]
+    do_pc_step_wait = np.zeros(nodecount)
+
+    if ctrl.TO_step_wait > 0:
+        next_event = np.array(['emit' if x=='static' else 'adju' for x in nodetype])
+    else:
+        next_event = np.array(['emit']*nodecount)
 
 
     if ctrl.keep_intermediate_values:
@@ -326,7 +339,7 @@ def runsim(p,ctrl):
 
         # ----------------
         # Adjust phase
-        elif next_event[node] == 'adjust':
+        elif next_event[node] == 'adju':
             # Variable window length
             if ctrl.var_winlen:
                 # Calculate winlen
@@ -380,21 +393,37 @@ def runsim(p,ctrl):
 
             # Offset with respect to emit time
             TO = winmax - winlen + bary_avg - cursample + wait_til_adjust[node] 
-            #if node==2:
-            #    print(wait_emit[node])
-            #    graphs.continuous(corpos)
-            #    graphs.show()
             
             # Fix slot offset for 
             if ctrl.half_duplex:
                 TO += hd_correction[node]
 
-            
-            TO_correction = round(TO*epsilon_TO)
-            theta[node] += TO_correction
+            # Apply epsilon
+            TO = round(TO*epsilon_TO)
+
+            # Prop delay correction
+            if do_pc_step_wait[node] > ctrl.pc_step_wait and ctrl.prop_correction:
+                prev_TOx[node].appendleft(TO)
+                #print(prev_TOx[node])
+                #print(pc_b)
+                #print(prev_TOy[node])
+                #print(pc_a)
+                TO = (prev_TOx[node]*pc_b).sum() - (prev_TOy*pc_a[1:]).sum()
+                prev_TOy[node].appendleft(TO)
+            else:
+                do_pc_step_wait[node] += 1
+
+            # If TO leads to an adjustement bigger than cursample, something may have gone wrong.
+            if not np.isfinite(TO):
+                raise Exception('TO = ' + str(TO))
+            if TO > wait_til_adjust[node]:
+                warnings.warn('final TO correction beyond adjust window')
+                TO %= phi[node]
+
+            theta[node] += TO
             theta[node] = theta[node] % phi[node]
 
-            prev_TO[node] = TO
+            #prev_TO[node] = TO
 
 
 
@@ -443,18 +472,20 @@ def runsim(p,ctrl):
             # Set next event
             if wait_emit[node] < ctrl.TO_step_wait:
                 next_event_sample = (math.ceil(phi[node])\
-                                          +cursample+TO_correction).astype(lib.INT_DTYPE)
+                                          +cursample+TO).astype(lib.INT_DTYPE)
                 next_event[node] = 'adjust'
                 wait_emit[node] += 1
             else:
                 next_event_sample = (math.ceil(phi[node]*emit_frac[node])\
-                                          +cursample+TO_correction).astype(lib.INT_DTYPE)
+                                          +cursample+TO).astype(lib.INT_DTYPE)
                 next_event[node] = 'emit'
 
             if next_event_sample <= cursample + phi[node]*ctrl.min_back_adjust:
                 next_event_sample += phi[node]
             
             ordered_insert(next_event_sample, node)
+        else:
+            raise Exception("Unknown next event '" + str(next_event[node]) + "'")
 
 
         # ----------------

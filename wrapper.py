@@ -10,6 +10,9 @@ import warnings
 import inspect
 import time
 
+from numpy import pi
+
+
 from sim_channel import runsim, SimControls
 
 
@@ -19,107 +22,58 @@ from sim_channel import runsim, SimControls
 def dec_wrap1():
     """Chained ZC sequences"""
     p = lib.SyncParams()
-    p.zc_len = 101
+    p.zc_len = 71
     p.plen = 31
+
     p.rolloff = 0.2
-    p.f_samp = 4e6
-    p.f_symb = 1e6
+    p.f_samp = 1e6
+    p.f_symb = 0.25e6
     p.repeat = 1
     p.spacing_factor = 2 # CHANGE TO TWO!
+
     p.power_weight = 4
     p.full_sim = True
     p.bias_removal = True
-    p.ma_window = 1 # number of samples i.e. after analog modulation
-    p.crosscorr_fct = 'analog'
-    p.train_type = 'chain'
+    p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
+    p.train_type = 'chain' # Type of training sequence
+    p.crosscorr_fct = 'analog' 
     p.pulse_type = 'raisedcosine'
     p.central_padding = 0 # As a fraction of zpos length
     p.update()
 
-    ctrl = SimControls()
-    ctrl.steps = 40
-    ctrl.basephi = 4000
-    ctrl.max_start_delay = 10 # In factor of basephi
-    ctrl.display = True
-    ctrl.saveall = True
-    ctrl.keep_intermediate_values = True
-    ctrl.nodecount = 5
-    ctrl.CFO_step_wait = 10
-    ctrl.theta_bounds = [0,1]
-    #ctrl.cfo_bias = 0.0008 # in terms of f_symb
-    ctrl.deltaf_bound = 3e-6
-    ctrl.noise_std = 0
-    ctrl.rand_init = True
-    ctrl.non_rand_seed = 112312341 # Only used if rand_init is False
-    ctrl.max_echo_taps = 1
-    ctrl.cfo_mapper_fct = lib.cfo_mapper_order2
-    ctrl.bmap_reach = 1e-6
-    ctrl.bmap_scaling = 100
-    ctrl.CFO_processing_avgtype = 'reg'
-    ctrl.CFO_processing_avgwindow = 1
-    #ctrl.min_delay = 0.02 # in terms of basephi
-    #ctrl.delay_sigma = 0.001 # Standard deviation used for the generator delay function
-    #ctrl.delay_fct = delay_pdf_exp
-    ctrl.max_CFO_correction = 1e-6 # As a factor of f_symb
-    ctrl.update()
-
-    return p, ctrl
-
-def dec_wrap2():
-    """Single ZC sequence with Decimation"""
-    p = lib.SyncParams()
-    p.zc_len = 101
-    p.plen = 31
-
-    p.rolloff = 0.2
-    p.f_samp = 4e6
-    p.f_symb = 1e6
-    p.repeat = 1
-    p.spacing_factor = 1 # CHANGE TO TWO!
-
-    p.power_weight = 2
-    p.full_sim = True
-    p.bias_removal = False
-    p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
-    p.train_type = 'single' # Type of training sequence
-    p.crosscorr_fct = 'match_decimate' 
-    #p.pulse_type = 'raisedcosine'
-    p.pulse_type = 'rootraisedcosine'
-    p.central_padding = 0 # As a fraction of zpos length
-    p.update()
-
 
     ctrl = SimControls()
-    ctrl.steps = 40 # Approx number of emissions per node
-    ctrl.basephi = 5000 # How many samples between emission
+    ctrl.steps = 60 # Approx number of emissions per node
+    ctrl.basephi = 6000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = False # Needed to draw graphs
-    ctrl.nodecount = 5 # Number of nodes
+    ctrl.nodecount = 15 # Number of nodes
     ctrl.static_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
     ctrl.TO_step_wait = 0
     ctrl.max_start_delay = 0 # In factor of basephi
 
     ctrl.theta_bounds = [0.3,0.7] # In units of phi
-    ctrl.theta_bounds = [0.48,0.52] # In units of phi
+    #ctrl.theta_bounds = [0.48,0.52] # In units of phi
     #ctrl.theta_bounds = [0.5,0.5] # In units of phi
     #ctrl.deltaf_bound = 3e-6
-    ctrl.deltaf_bound = 0
-    ctrl.noise_var = 0.01
+    ctrl.deltaf_bound = 3e-2
+    ctrl.noise_var = 0
     ctrl.rand_init = False
     ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
 
     ctrl.bmap_reach = 3e-6
     ctrl.bmap_scaling = 100
 
-    ctrl.cfo_mapper_fct = lib.cfo_mapper_pass
+    ctrl.cfo_mapper_fct = lib.cfo_mapper_order2
     ctrl.CFO_processing_avgtype = 'reg'
-    ctrl.CFO_processing_avgwindow = 1
+    ctrl.CFO_processing_avgwindow = 4
     ctrl.max_CFO_correction = 1e-6 # As a factor of f_symb
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_exp)
     ctrl.delay_params.taps = 1
-    ctrl.delay_params.sigma = 0.02
+    ctrl.delay_params.t_sigma = 0.2 # Distance sigma ( in samples)
+    ctrl.delay_params.p_sigma = 0.2 # Paths sigma
 
     ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
@@ -134,6 +88,18 @@ def dec_wrap2():
     ctrl.vw_lofactor = 1.5 # winlen reduction factor
     ctrl.vw_hifactor = 2 # winlen increase factor
     
+
+    ctrl.prop_correction = True
+    ctrl.pc_step_wait = 0
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_filter4(11, pi/1000, 0.5)
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_filter4(11, pi/4, 0.1)
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_filter4(11, pi/4, 1)
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_filter3(20)
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_filter2(8)
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_filter1(8)
+    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(20)
+    ctrl.pc_std_thresh = float('inf')
+    
     ctrl.saveall = True
 
     ctrl.update()
@@ -144,37 +110,143 @@ def dec_wrap2():
 
     pdict = {}
 
-    return p, ctrl, cdict, pdict
+   
+
+    return ctrl, p, cdict, pdict
+
+def dec_wrap2():
+    """Single ZC sequence with Decimation"""
+    p = lib.SyncParams()
+    p.zc_len = 71
+    p.plen = 31
+
+    p.rolloff = 0.2
+    #p.f_samp = 4e6
+    #p.f_symb = 1e6
+    p.f_samp = 30.72e6
+    p.f_symb = p.f_samp/4
+    p.repeat = 1
+    p.spacing_factor = 1 # CHANGE TO TWO!
+
+    p.power_weight = 2
+    p.full_sim = True
+    p.bias_removal = True
+    p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
+    p.train_type = 'single' # Type of training sequence
+    p.crosscorr_fct = 'analog' 
+    p.pulse_type = 'raisedcosine'
+    p.central_padding = 0 # As a fraction of zpos length
+    p.update()
+
+
+    ctrl = SimControls()
+    ctrl.steps = 200 # Approx number of emissions per node
+    ctrl.basephi = 5000 # How many samples between emission
+    ctrl.display = True # Show stuff in the console
+    ctrl.keep_intermediate_values = False # Needed to draw graphs
+    ctrl.nodecount = 10 # Number of nodes
+    ctrl.static_nodes = 0
+    ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
+    ctrl.TO_step_wait = 0
+    ctrl.max_start_delay = 0 # In factor of basephi
+
+    ctrl.theta_bounds = [0.3,0.7] # In units of phi
+    #ctrl.theta_bounds = [0.48,0.52] # In units of phi
+    #ctrl.theta_bounds = [0.5,0.5] # In units of phi
+    ctrl.deltaf_bound = 3e-2
+    #ctrl.deltaf_bound = 0
+    ctrl.noise_var = 0
+    ctrl.rand_init = False
+    ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
+
+    ctrl.bmap_reach = 3e-6
+    ctrl.bmap_scaling = 100
+
+    ctrl.cfo_mapper_fct = lib.cfo_mapper_pass
+    ctrl.CFO_processing_avgtype = 'reg'
+    ctrl.CFO_processing_avgwindow = 1
+    ctrl.max_CFO_correction = 1e-6 # As a factor of f_symb
+
+    ctrl.delay_params = lib.DelayParams(lib.delay_pdf_exp)
+    ctrl.delay_params.taps = 1
+    ctrl.delay_params.t_sigma = 0.01 # Distance sigma ( in samples)
+    ctrl.delay_params.p_sigma = 0.02 # Paths sigma
+
+    ctrl.half_duplex = False
+    ctrl.hd_slot0 = 0.3 # in terms of phi
+    ctrl.hd_slot1 = 0.7 # in terms of phi
+    ctrl.hd_block_during_emit = True
+    ctrl.hd_block_extrawidth = 0 # as a factor of offset (see runsim to know what is offset)
+
+    ctrl.var_winlen = False
+    ctrl.vw_minsize = 5 # as a factor of len(p.analog_sig)
+    ctrl.vw_lothreshold = 0.1 # winlen reduction threshold
+    ctrl.vw_hithreshold = 0.1 # winlen increase threshold
+    ctrl.vw_lofactor = 1.5 # winlen reduction factor
+    ctrl.vw_hifactor = 2 # winlen increase factor
+    
+
+    ctrl.prop_correction = True
+    ctrl.pc_step_wait = 0
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_filter4(11, pi/1000, 0.5)
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_semicirc_zeros(11, pi/4, 0.1)
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_filter4(11, pi/4, 1)
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_remez(20)
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_butter(8)
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_cheby(8)
+    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(30)
+    ctrl.pc_std_thresh = float('inf')
+    
+    ctrl.saveall = True
+
+    ctrl.update()
+
+    cdict = {
+        'nodecount':[x for x in range(5,15)]
+        }
+
+    pdict = {}
+
+    return ctrl, p, cdict, pdict
 
 #------------------------
 def main_thesis():
 
-    p, ctrl = dec_wrap1()
-    #graphs.barywidth_wrap(p,ctrl, force_calculate=True); graphs.show(); exit()
-    
-    #graphs.crosscorr(p); graphs.show(); exit()
-    #graphs.analog(p); graphs.show(); exit()
-    graphs.pulse(p); graphs.show(); exit()
+    ctrl, p, cdict, pdict = dec_wrap1()
+    sim = SimWrap(ctrl, p, cdict, pdict)
+    ctrl.f_samp = p.f_samp
 
-    sim_object = SimWrap(p, ctrl)
-    sim_object.show_plots = True
-    sim_object.simulate()
+
+    #graphs.barywidth_wrap(p,ctrl, force_calculate=True); graphs.show(); exit()
+    #graphs.crosscorr(p); graphs.show(); exit()
+
+    #graphs.freq_response(ctrl.pc_b, ctrl.pc_a); graphs.show(); exit()
+    #graphs.delay_pdf(ctrl); graphs.show(); exit()
+    #graphs.delay_grid(ctrl); graphs.show(); exit()
+    #graphs.node_multitaps(ctrl); graphs.show(); exit()
+    sim.ctrl.keep_intermediate_values = True
+    sim.show_CFO = False
+    sim.simulate()
+    sim.eval_convergence()
+    sim.post_sim_plots()
+    exit()
 
 def main_interd():
 
 
-    p, ctrl, cdict, pdict = dec_wrap2()
+    ctrl, p, cdict, pdict = dec_wrap2()
     sim = SimWrap(ctrl, p, cdict, pdict)
-    #p, ctrl = dec_wrap1()
+    ctrl.f_samp = p.f_samp
 
 
+    #graphs.freq_response(ctrl.pc_b, ctrl.pc_a); graphs.show(); exit()
     #graphs.delay_pdf(ctrl); graphs.show(); exit()
     #graphs.delay_grid(ctrl); graphs.show(); exit()
     sim.ctrl.keep_intermediate_values = True
     sim.show_CFO = False
-    sim.make_plots = False 
     sim.simulate()
     sim.eval_convergence()
+    sim.post_sim_plots()
     exit()
 
     sim.set_all_nodisp()
@@ -215,7 +287,7 @@ class SimWrap(lib.Struct):
     """Simulation object for ease of use"""
 
     force_calculate = False # Forces the update of all values before starting the simulation
-    make_plots = True
+    #make_plots = True
     show_CFO = True # only works if make_plots is True
     show_TO = True # only works if make_plots is True
     show_SNR = True
@@ -230,6 +302,7 @@ class SimWrap(lib.Struct):
     #Convergence criterions
     conv_eval_cfo = False
     conv_min_slope_samples = 5 # Minimum # of samples to take for slope eval
+    conv_offset_limits = [-16, 1] # How many symbols to be outside the cyclic prefix IN SYMBOLS
     
 
 
@@ -245,6 +318,11 @@ class SimWrap(lib.Struct):
             self.cdict=cdict
         if pdict is not None:
             self.pdict=pdict
+
+    def update_conv_criterions(self):
+        """Updates the time offset limits from the p object"""
+        pass
+    
 
     def update_params(self,  ctrl=None, p=None):
         """Updates the params and runs barywidth_map if needed"""
@@ -286,11 +364,6 @@ class SimWrap(lib.Struct):
         runsim(self.p, self.ctrl)
         self.ctrl.date = lib.build_timestamp_id();
         db.add(self.ctrl.__dict__)
-
-        
-        # Plot pretty graphs
-        if self.make_plots:
-            graphs.post_sim_graphs(self)
 
     def simmany(self, assign_method='all'):
         """Simulates many simulations according to the simdicts"""
@@ -379,6 +452,10 @@ class SimWrap(lib.Struct):
 
         yield False # When both dicts are empty,  return false.
 
+    def post_sim_plots(self):
+        """Wrapper for the plotlib fct"""
+        graphs.post_sim_graphs(self)
+
     def total_sims(self, assign_method='all'):
         """Returns the total number of simulations that will be executed based on the # of elements in cdict/pdict"""
         count = 0
@@ -422,17 +499,32 @@ class SimWrap(lib.Struct):
 
         # Evaluate drift slope over the last domain% or 5 intermediate vals
         tlist = self.ctrl.theta_inter
-        clist = self.ctrl.deltaf_inter
+        flist = self.ctrl.deltaf_inter
 
-        output['theta_drift'] = drift_eval(tlist)
+        output['theta_drift_slope_avg'], output['theta_drift_slope_std'] = drift_eval(tlist)
         if self.conv_eval_cfo:
-            output['deltaf_drift'] = drift_eval(dlist)
+            output['deltaf_drift_slope_avg'], output['deltaf_drift_slope_std'] = drift_eval(flist)
 
         # Evaluate communication capabilites between all nodes 
         theta = self.ctrl.theta
-        tmp_del_grid = (self.ctrl.delay_params.delay_grid*self.ctrl.basephi).astype(theta.dtype)
+        prop_delay_grid = (self.ctrl.delay_params.delay_grid*self.ctrl.basephi).astype(theta.dtype)
         offset_grid = np.tile(theta.reshape(-1,1), theta.shape[0])
-        offset_grid +=  -1*offset_grid.T - tmp_del_grid
+        offset_grid +=  -1*offset_grid.T
+        offset_grid +=  -1*prop_delay_grid
+        offsets = offset_grid[~np.eye(offset_grid.shape[0], dtype=bool)]
+        linkcount = len(offsets)
+
+        lo, hi = [k*self.p.spacing for k in self.conv_offset_limits]
+        good_links = ((offsets>lo) & (offsets<hi)).sum()
+
+        output['good_link_ratio'] = good_links/linkcount
+
+        
+        if disp:
+            for key, item in sorted(output.items()):
+                print(key + ": " + str(item))
+
+        return output
 
 
 if __name__ == '__main__':

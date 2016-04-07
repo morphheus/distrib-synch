@@ -12,6 +12,7 @@ from sqlite3 import OperationalError
 
 from numpy import pi
 from pprint import pprint
+from scipy import signal
 from scipy.signal import fftconvolve
 from scipy.optimize import curve_fit, leastsq
 
@@ -34,6 +35,9 @@ BARY_DBASE_FILE = 'barywidths.sqlite'
 LAST_PRINT_LEN = 0
 
 BASE62_ALPHABET =  string.digits + string.ascii_uppercase + string.ascii_lowercase
+
+# Speed of light in m/s
+SOL = 299792458
 
 
 #--------------------
@@ -686,6 +690,52 @@ def ll_redux_2d(p,t0,l0, theta_range, deltaf_range, var_w=1):
     return loglike
 
 #--------------------
+def hipass_avg(N):
+    """filter0: regular average"""
+    b = np.array([1] + list(-1*np.ones(N)/N))
+    a = np.array([1])
+    return b,a
+
+def hipass_cheby(N):
+    """filter1: type 1 chebychev"""
+    b, a = signal.cheby2(N, 1, 0.05, btype='high')
+    return b,a
+
+def hipass_butter(N):
+    """filter2: butterworth filter"""
+    b, a = signal.butter(N, 0.01, btype='high')
+    return b,a
+
+def hipass_remez(N):
+    """filter2: FIR highpass. Requires N Odd"""
+    b = signal.remez(N, [0,0.1,0.2,0.5], [0,1])
+    return b, np.array([1])
+
+def hipass_semicirc_zeros(N, max_angle, zeros_magnitude):
+    """filter2: FIR highpass. Requires N Odd"""
+    if N % 2 == 0:
+        raise Exception('Requires an odd order')
+
+
+    angles = np.zeros(N, dtype=FLOAT_DTYPE)
+    for k in range(1,N//2+1):
+        angles[2*k-1] = k
+        angles[2*k] = -k
+    angles *= max_angle/(N//2)
+
+    zeros = list(np.exp(1j*angles) * zeros_magnitude)
+
+    b = np.zeros(N+1, dtype=CPLX_DTYPE)
+    b[0] = 1
+    b[1] = -1*zeros.pop(0)
+
+    #np.set_printoptions(precision=4)
+    for z in zeros:
+        b[1:] += -1*z*b[:-1]
+    
+    return b.real, np.array([1])
+
+#--------------------
 def build_timestamp_id():
     """Builds a timestamp, and appens a random 3 digit number after it"""
     return db.build_timestamp_id()
@@ -715,8 +765,6 @@ def base62_decode(encoded):
         decoded += base**k*alpha.index(char)
 
     return decoded
-
-
 
 def appendlog(logdesc):
     """Appends the text to the logfile"""
@@ -768,6 +816,12 @@ def avg_copies(data):
 
     return indeps, avgs, stds
 
+def samples2dist(x, f_samp, unit='km'):
+    """Converts samples to a distance unit (kilometers or meters)"""
+    if unit == 'km': unit_fact = SOL/f_samp/1000
+    elif unit == 'm': unit_fact = SOL/f_samp
+    else: raise('Unknown unit')
+    return x*unit_fact
 
 
 ##########################
@@ -787,17 +841,19 @@ class DelayParams(Struct):
     def __init__(self, delay_pdf,
                  taps=1,
                  t0=0,
-                 sigma=0):
+                 t_sigma=0,
+                 p_sigma=0):
 
         if not callable(delay_pdf):
             raise ValueError(type(self).__name__ + " must be initialized with a callable PDF function")
         self.delay_pdf = delay_pdf
         self.taps = taps
         self.t0 = t0
-        self.sigma = sigma
+        self.t_sigma = t_sigma
+        self.p_sigma = p_sigma
 
     def delay_pdf_eval(self, t, **kwargs):
-        return self.delay_pdf(t, self.sigma, self.t0, **kwargs)
+        return self.delay_pdf(t, self.p_sigma, self.t0, **kwargs)
 
     def rnd_delay(self,t0, **kwargs):
         """Builds an array of delays with the associated amplitudes. Uniformly picks the delays,
@@ -810,7 +866,7 @@ class DelayParams(Struct):
             delay: np array of the delays
             amps:  np array of the amplitudes
         """
-        delay_list =[t0] +  [np.random.rand()*np.sqrt(12)*self.sigma+t0 for x in range(self.taps-1)]
+        delay_list =[t0] +  [np.random.rand()*np.sqrt(12)*self.p_sigma+t0 for x in range(self.taps-1)]
         amp_list = [self.delay_pdf_eval(t, **kwargs) for t in delay_list]
         delay = np.array(delay_list, FLOAT_DTYPE)
         amp = np.array(amp_list, FLOAT_DTYPE)
@@ -824,7 +880,8 @@ class DelayParams(Struct):
 
         # Build delay grid 
         tiled = lambda x: np.tile(x, x.shape[0])
-        self.gridx, self.gridy = [np.random.rand(nodecount, 1)*np.sqrt(12)*self.sigma/np.sqrt(2) for x in range(2)]
+        self.width = np.sqrt(12)*self.t_sigma
+        self.gridx, self.gridy = [(np.random.rand(nodecount, 1)-0.5)*self.width for x in range(2)]
         tx, ty = (tiled(self.gridx), tiled(self.gridy))
         self.delay_grid = np.sqrt((tx - tx.T)**2 + (ty - ty.T)**2)
 
@@ -836,11 +893,6 @@ class DelayParams(Struct):
                 echoes['delay'][k][l] = (delay*basephi).astype(INT_DTYPE)
                 echoes['amp'][k][l] = amp
 
-        
-
-
-        # TODO: Pick input delay/amp from ctrl
-        # TODO: don't use a structured array
         return echoes['delay'], echoes['amp']
 
 class SyncParams(Struct):
@@ -993,7 +1045,7 @@ class SyncParams(Struct):
         tmp = self.f_samp/self.f_symb
         if not float(tmp).is_integer():
             raise ValueError('The ratio between the symbol period and sampling period must be an integer')
-        self.add(spacing=self.spacing_factor*int(tmp))
+        self.add(spacing=self.spacing_factor*round(int(tmp)))
 
 
         # Find bias removal threshold if needed
