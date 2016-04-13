@@ -406,17 +406,28 @@ def calc_both_barycenters(p, *args,mode='valid'):
     else:
         g = p.analog_sig
 
+    # kwargs tha willl be reused
+    barycorr_kwargs ={'power_weight':p.power_weight, 'bias_thresh':p.bias_removal, 'mode':mode, 'ma_window':p.ma_window}
 
-    # Single ZC handling
-    if p.crosscorr_fct == 'match_decimate':
+
+    # Decimation handling
+    if 'match_decimate' in p.crosscorr_fct:
         decimated_signal, start_index, _ = match_decimate(g, p.pulse, p.spacing)
-        crosscorrpos = np.abs(crosscorr_fct(p.training_seq, decimated_signal, 'same'))
-        barypos = start_index + p.spacing*np.argmax(crosscorrpos)
-        #barypos, crosscorrpos = barycenter_correlation(p.training_seq , decimated_signal, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode, ma_window=p.ma_window) 
-        #barypos = start_index + p.spacing*(barypos)
+        symbol_bary, crosscorrpos = barycenter_correlation(p.training_seq , decimated_signal,
+                                                            **barycorr_kwargs) 
+
+        if p.crosscorr_fct == 'match_decimate_argmax':
+            # Redefine barypos using the argmax
+            barypos = start_index + p.spacing*np.argmax(crosscorrpos)
+
+        elif p.crosscorr_fct == 'match_decimate_wavg':
+            barypos = start_index + p.spacing*symbol_bary
+        else:
+            raise Exception('Invalid p.crosscorr_fct string')
+
         return barypos, barypos, crosscorrpos, crosscorrpos
 
-    # Multi ZC handling
+    # Non-decimation approaches
     elif p.crosscorr_fct == 'zeropadded':
         f1 = p.pad_zpos
         f2 = p.pad_zneg
@@ -424,10 +435,14 @@ def calc_both_barycenters(p, *args,mode='valid'):
         f1 = p.analog_zpos
         f2 = p.analog_zneg
     else:
-        raise Exception('Invalid p.crosscorr_fct value')
+        raise Exception('Invalid p.crosscorr_fct string')
     
-    barypos, crosscorrpos =barycenter_correlation(f1 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode, ma_window=p.ma_window) 
-    baryneg, crosscorrneg =barycenter_correlation(f2 , g, power_weight=p.power_weight, bias_thresh=p.bias_removal, mode=mode, ma_window=p.ma_window) 
+    barypos, crosscorrpos = barycenter_correlation(f1 , g, **barycorr_kwargs) 
+    if p.train_type == 'chain':
+        baryneg, crosscorrneg = barycenter_correlation(f2 , g, **barycorr_kwargs) 
+    elif p.train_type == 'single':
+        baryneg = barypos
+        crosscorrneg = crosscorrpos
 
     return barypos, baryneg, crosscorrpos, crosscorrneg
 
@@ -1054,28 +1069,25 @@ class SyncParams(Struct):
         # For cyclical crosscorrelations, this would be sqrt(N)/N
         if self.bias_removal == True:
             tmp_full_sim = self.full_sim
-            tmp_train_type = self.train_type
             self.full_sim = False
-            self.train_type = 'chain'
-            
 
-            self.build_training_sequence()
             self.build_analog_sig()
             self.bias_removal = False
             _, _, cpos, _ = calc_both_barycenters(self)
             N = len(cpos)
-            max1 = np.max(cpos[math.ceil(N/2):])
-            max2 = np.max(cpos[:math.floor(N/2)])
+            if self.train_type == 'chain':
+                max1 = np.max(cpos[math.ceil(N/2):])
+                max2 = np.max(cpos[:math.floor(N/2)])
+            if self.train_type == 'single':
+                max1 = np.max(cpos)
+                max2 = np.max(cpos[:math.floor(2*N/3)])
             
 
             self.bias_removal = max2/max1
 
             #Cleanup if needed
-            if tmp_full_sim or tmp_train_type != 'train':
+            if tmp_full_sim:
                 self.full_sim = True
-                self.train_type = tmp_train_type
-                self.build_training_sequence()
-                self.build_analog_sig()
         # If no bias removal, or already computed, just build  
         else:
             self.build_analog_sig()

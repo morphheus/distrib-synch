@@ -130,22 +130,22 @@ def dec_wrap2():
 
     p.power_weight = 2
     p.full_sim = True
-    p.bias_removal = True
+    p.bias_removal = False
     p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
     p.train_type = 'single' # Type of training sequence
-    p.crosscorr_fct = 'analog' 
-    p.pulse_type = 'raisedcosine'
+    p.crosscorr_fct = 'match_decimate_wavg' 
+    p.pulse_type = 'rootraisedcosine'
     p.central_padding = 0 # As a fraction of zpos length
     p.update()
 
 
     ctrl = SimControls()
-    ctrl.steps = 200 # Approx number of emissions per node
+    ctrl.steps = 100 # Approx number of emissions per node
     ctrl.basephi = 5000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = False # Needed to draw graphs
-    ctrl.nodecount = 10 # Number of nodes
-    ctrl.static_nodes = 0
+    ctrl.nodecount = 15 # Number of nodes
+    ctrl.static_nodes = 1
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
     ctrl.TO_step_wait = 0
     ctrl.max_start_delay = 0 # In factor of basephi
@@ -155,7 +155,7 @@ def dec_wrap2():
     #ctrl.theta_bounds = [0.5,0.5] # In units of phi
     ctrl.deltaf_bound = 3e-2
     #ctrl.deltaf_bound = 0
-    ctrl.noise_var = 0
+    ctrl.noise_var = 1
     ctrl.rand_init = False
     ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
 
@@ -194,7 +194,7 @@ def dec_wrap2():
     #ctrl.pc_b, ctrl.pc_a = lib.hipass_remez(20)
     #ctrl.pc_b, ctrl.pc_a = lib.hipass_butter(8)
     #ctrl.pc_b, ctrl.pc_a = lib.hipass_cheby(8)
-    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(30)
+    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(20)
     ctrl.pc_std_thresh = float('inf')
     
     ctrl.saveall = True
@@ -214,7 +214,6 @@ def main_thesis():
 
     ctrl, p, cdict, pdict = dec_wrap1()
     sim = SimWrap(ctrl, p, cdict, pdict)
-    ctrl.f_samp = p.f_samp
 
 
     #graphs.barywidth_wrap(p,ctrl, force_calculate=True); graphs.show(); exit()
@@ -236,7 +235,6 @@ def main_interd():
 
     ctrl, p, cdict, pdict = dec_wrap2()
     sim = SimWrap(ctrl, p, cdict, pdict)
-    ctrl.f_samp = p.f_samp
 
 
     #graphs.freq_response(ctrl.pc_b, ctrl.pc_a); graphs.show(); exit()
@@ -318,6 +316,7 @@ class SimWrap(lib.Struct):
             self.cdict=cdict
         if pdict is not None:
             self.pdict=pdict
+            self.ctrl.f_samp = self.p.f_samp
 
     def update_conv_criterions(self):
         """Updates the time offset limits from the p object"""
