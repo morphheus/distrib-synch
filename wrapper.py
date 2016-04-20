@@ -39,7 +39,6 @@ def dec_wrap1():
     p.crosscorr_fct = 'analog' 
     p.pulse_type = 'raisedcosine'
     p.central_padding = 0 # As a fraction of zpos length
-    p.update()
 
 
     ctrl = SimControls()
@@ -72,7 +71,7 @@ def dec_wrap1():
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_exp)
     ctrl.delay_params.taps = 1
-    ctrl.delay_params.t_sigma = 0.2 # Distance sigma ( in samples)
+    ctrl.delay_params.max_dist_from_origin = 500 # in meters
     ctrl.delay_params.p_sigma = 0.2 # Paths sigma
 
     ctrl.half_duplex = False
@@ -102,7 +101,6 @@ def dec_wrap1():
     
     ctrl.saveall = True
 
-    ctrl.update()
 
     cdict = {
         'nodecount':[x for x in range(5,15)]
@@ -133,10 +131,9 @@ def dec_wrap2():
     p.bias_removal = False
     p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
     p.train_type = 'single' # Type of training sequence
-    p.crosscorr_fct = 'match_decimate_wavg' 
+    p.crosscorr_fct = 'match_decimate_argmax' 
     p.pulse_type = 'rootraisedcosine'
     p.central_padding = 0 # As a fraction of zpos length
-    p.update()
 
 
     ctrl = SimControls()
@@ -145,7 +142,7 @@ def dec_wrap2():
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = False # Needed to draw graphs
     ctrl.nodecount = 15 # Number of nodes
-    ctrl.static_nodes = 1
+    ctrl.static_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
     ctrl.TO_step_wait = 0
     ctrl.max_start_delay = 0 # In factor of basephi
@@ -155,9 +152,9 @@ def dec_wrap2():
     #ctrl.theta_bounds = [0.5,0.5] # In units of phi
     ctrl.deltaf_bound = 3e-2
     #ctrl.deltaf_bound = 0
-    ctrl.noise_var = 1
     ctrl.rand_init = False
     ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
+    ctrl.noise_power = float('-inf')
 
     ctrl.bmap_reach = 3e-6
     ctrl.bmap_scaling = 100
@@ -169,8 +166,8 @@ def dec_wrap2():
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_exp)
     ctrl.delay_params.taps = 1
-    ctrl.delay_params.t_sigma = 0.01 # Distance sigma ( in samples)
-    ctrl.delay_params.p_sigma = 0.02 # Paths sigma
+    ctrl.delay_params.max_dist_from_origin = 0 # (in meters)
+    ctrl.delay_params.p_sigma = 0 # Paths sigma
 
     ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
@@ -186,7 +183,7 @@ def dec_wrap2():
     ctrl.vw_hifactor = 2 # winlen increase factor
     
 
-    ctrl.prop_correction = True
+    ctrl.prop_correction = False
     ctrl.pc_step_wait = 0
     #ctrl.pc_b, ctrl.pc_a = lib.hipass_filter4(11, pi/1000, 0.5)
     #ctrl.pc_b, ctrl.pc_a = lib.hipass_semicirc_zeros(11, pi/4, 0.1)
@@ -199,7 +196,6 @@ def dec_wrap2():
     
     ctrl.saveall = True
 
-    ctrl.update()
 
     cdict = {
         'nodecount':[x for x in range(5,15)]
@@ -308,6 +304,11 @@ class SimWrap(lib.Struct):
         """Prepares ctrl & p for simulation"""
         self.add(p=p)
         self.add(ctrl=ctrl)
+
+        self.ctrl.f_samp = p.f_samp
+        self.p.update()
+        self.ctrl.update()
+
         lib.barywidth_map(self.p, reach=self.ctrl.bmap_reach , scaling_fct=self.ctrl.bmap_scaling , force_calculate=self.force_calculate, disp=self.show_bary)
         if self.force_calculate:
             self.p.update()
@@ -318,10 +319,12 @@ class SimWrap(lib.Struct):
             self.pdict=pdict
             self.ctrl.f_samp = self.p.f_samp
 
+        base_avg_amp = np.float64((np.sum(np.abs(self.p.analog_sig)))/len(self.p.analog_sig))
+        self.ctrl.trans_amp = lib.db2amp(ctrl.trans_power)*base_avg_amp
+
     def update_conv_criterions(self):
         """Updates the time offset limits from the p object"""
         pass
-    
 
     def update_params(self,  ctrl=None, p=None):
         """Updates the params and runs barywidth_map if needed"""
@@ -340,6 +343,15 @@ class SimWrap(lib.Struct):
         """Triggers the update of the barywidth map"""
         lib.barywidth_map(self.p, reach=self.ctrl.bmap_reach , scaling_fct=self.ctrl.bmap_scaling , force_calculate=self.force_calculate, disp=self.show_bary)
 
+    def snr_stats(self):
+        """Returns the SNR stats (max, med, min), snr_grid"""
+        Prx = self.ctrl.trans_power - self.ctrl.delay_params.pathloss_grid
+        snr_grid = Prx - self.ctrl.noise_power
+
+        # Grab the upper triangular entries in snrgrid
+        x = snr_grid[np.triu_indices(snr_grid.shape[0], m=snr_grid.shape[1], k=1)]
+        return (max(x), np.median(x), min(x)) , snr_grid
+  
     def set_all_nodisp(self):
         """All display values are set to false"""
         self.show_CFO = False
@@ -351,13 +363,17 @@ class SimWrap(lib.Struct):
 
     def simulate(self):
         """Simulate and run post-sim stuff, such as graphs or output saving"""
+
+        # Some display stuff
         msg = ''
         siglen_value = "{:.2f}".format(len(self.p.analog_sig)/self.ctrl.basephi)
         if self.show_siglen: msg = 'Sync signal length: ' + siglen_value + ' basephi' + '    '
-        if self.show_SNR: msg += "SNR : " + str(lib.calc_snr(self.ctrl,self.p)) + " dB"
+
+        stats = self.snr_stats()[0]
+        stats_str = '(' + ', '.join(['{0:.2f}'.format(k) for k in stats]) + ') dB'
+        if self.show_SNR: msg += 'SNR (max, median, min): ' + stats_str
 
         if msg!='': print(msg)
-        
 
         # Exec the simulation and save the output
         runsim(self.p, self.ctrl)
@@ -506,7 +522,7 @@ class SimWrap(lib.Struct):
 
         # Evaluate communication capabilites between all nodes 
         theta = self.ctrl.theta
-        prop_delay_grid = (self.ctrl.delay_params.delay_grid*self.ctrl.basephi).astype(theta.dtype)
+        prop_delay_grid = self.ctrl.delay_params.delay_grid
         offset_grid = np.tile(theta.reshape(-1,1), theta.shape[0])
         offset_grid +=  -1*offset_grid.T
         offset_grid +=  -1*prop_delay_grid
@@ -525,6 +541,7 @@ class SimWrap(lib.Struct):
 
         return output
 
+    
 
 if __name__ == '__main__':
     main_interd()

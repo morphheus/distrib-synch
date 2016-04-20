@@ -34,7 +34,8 @@ class SimControls(lib.Struct):
         self.nodecount = 7
         self.basephi = 2000
         self.chansize = self.basephi*self.steps
-        self.noise_var = 0
+        self.trans_power = 23 # in dbm
+        self.noise_power = -101 + 9 # in dbm
         self.phi_bounds = [1,1]
         self.theta_bounds = [0,1]
         self.max_start_delay = 0 # In factor of basephi
@@ -50,6 +51,7 @@ class SimControls(lib.Struct):
         self.bmap_reach = 3e-1
         self.bmap_scaling = 100
         self.non_rand_seed = 1231231
+        self.f_carr = 2e9 # Carrier frequency in Hz
         # Node behaviours
         self.static_nodes = 0 # Static nodes do not adjust
         # Echo controls, initialized with no echoes
@@ -100,7 +102,7 @@ class SimControls(lib.Struct):
         if not self.rand_init:
             np.random.seed(self.non_rand_seed)
 
-        self.echo_delay, self.echo_amp = self.delay_params.build_delay_matrix(self.nodecount, self.basephi, **self.pdf_kwargs)
+        self.echo_delay, self.echo_amp = self.delay_params.build_delay_matrix(self.nodecount, self.basephi, self.f_samp, self.f_carr, **self.pdf_kwargs)
 
         if not self.rand_init:
             np.random.seed()
@@ -150,6 +152,8 @@ def runsim(p,ctrl):
     theta_minmax = ctrl.theta_minmax
     pc_b = ctrl.pc_b
     pc_a = ctrl.pc_a
+    noise_var = np.sqrt(lib.db2pwr(ctrl.noise_power))
+    trans_amp = ctrl.trans_amp
 
 
     # IF echoes specified, to shove in array. OW, just don't worry about it
@@ -231,7 +235,7 @@ def runsim(p,ctrl):
     theta = np.random.randint(theta_minmax[0],theta_minmax[1]+1, size=nodecount)
     deltaf = np.random.uniform(deltaf_minmax[0],deltaf_minmax[1], size=nodecount)
     clk_creation = np.random.randint(0,chansize, size=nodecount)
-    channels = lib.cplx_gaussian( [nodecount,chansize], ctrl.noise_var) 
+    channels = lib.cplx_gaussian( [nodecount,chansize], noise_var) 
 
     if ctrl.max_start_delay:
         start_delay = np.random.randint(0, ctrl.max_start_delay, size=nodecount)*basephi
@@ -315,7 +319,7 @@ def runsim(p,ctrl):
 
                 #Echoes management
                 for k in range(max_echo_taps):
-                    curr_amp = echo_amp[node][emitclk][k]
+                    curr_amp = echo_amp[node][emitclk][k]*trans_amp
                     if curr_amp != 0:
                         to_emit = analog_pulse*deltaf_arr
                         channels[emitclk, spread + echo_delay[node][emitclk][k]] += to_emit*curr_amp

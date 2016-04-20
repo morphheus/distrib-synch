@@ -11,6 +11,7 @@ import string
 from sqlite3 import OperationalError
 
 from numpy import pi
+from numpy import log10
 from pprint import pprint
 from scipy import signal
 from scipy.signal import fftconvolve
@@ -36,8 +37,7 @@ LAST_PRINT_LEN = 0
 
 BASE62_ALPHABET =  string.digits + string.ascii_uppercase + string.ascii_lowercase
 
-# Speed of light in m/s
-SOL = 299792458
+SOL = 299792458 # Speed of light in m/s
 
 
 #--------------------
@@ -153,17 +153,16 @@ def rrcosfilter(N, a, T, f, dtype=CPLX_DTYPE, frac_TO=0):
 #--------------------
 def calc_snr(ctrl,p):
     """Calculates the SNR of the system provided"""
-    noise_variance = np.float64(ctrl.noise_var)
-    signal_power = np.float64((np.sum(np.abs(p.analog_sig)))/len(p.analog_sig))**2
-
-
-    if not noise_variance == 0:
-        snr = signal_power/noise_variance
-    else:
-        snr = np.float64('inf')
-
-    snr_db = 10*np.log10(snr)
+    snr_db = ctrl.trans_power - ctrl.noise_power
     return(snr_db)
+
+def db2amp(db):
+    """Converts dbm to power (in miliwat)"""
+    return 10**(0.05*db)
+
+def db2pwr(db):
+    """Converts db to power """
+    return 10**(0.1*db)
 
 def in_place_mov_avg(vector, wlims):
     """Runs an in-place moving average on the input vector."""
@@ -600,6 +599,84 @@ def delay_pdf_exp(t, sigma, t0=0):
 
     return amp
 
+def pathloss_freespace(d, f_carr):
+    """Free space path loss. Frequencies are expected in MHz, d in meters"""
+    return 20*log10(d) + 46.4 + 20*log10(f_carr*1e-9/5)
+
+def pathloss_b1(d, f_carr, los=True):
+    """Path loss from table 4.1 in D5.1_v1.0, hexagonal layout. f_carr expected in Hz"""
+    fc = f_carr * 1e-9 # Carrier frequency in GHz (to make the switch statement more readable)
+
+    hbs = 1.5
+    hms = 1.5
+    hbsP = 0.8 # hbs'
+    hmsP = 0.8 # hms'
+    dbp = 3*hbsP*hmsP*f_carr/SOL
+
+    # IF reaaallly close, model breaks down
+    if 0 <= d < 3:
+        return 0.2
+    # yes los
+    elif los:
+        if d < dbp:
+            pl = 22.7*log10(d) + 27 + 20*log10(fc)
+        else:
+            pl = 40*log10(d) + 7.56 - 17.3*log10(hbsP) - 17.3*log10(hmsP) + 2.7*log10(fc)
+    # no los
+    else:
+        pl = (44.9 - 6.55*log10(hbs))*log10(d) + 5.83*log10(hbs) - 5 # -5 from 36843 specs
+        if 0.45 <= fc < 1.5:
+            pl += 16.33 + 26.16*log10(fc)
+        elif 1.5 <= fc < 2:
+            pl += 14.78 + 34.97*log10(fc)
+        elif 2 <= fc < 6:
+            pl += 18.38 + 23*log10(fc)
+        else:
+            raise ValueError('Expected f_carr between 0.45 and 6 GHz')
+    
+    return pl
+
+@np.vectorize
+def pathloss_b1_tot(x, f_samp, f_carr, out_format='amp'):
+    """B1_tot, as specified in 36843, A.2.1.2"""
+
+    if x < 0:
+        raise ValueError('Expected positive delay')
+    if x==0:
+        return 0 if out_format=='dB' else 1.0
+
+    # Probability of LOS
+    d = samples2dist(x, f_samp, unit='m')
+    prob_los = min(18/d, 1)*(1-np.exp(-d/36)) + np.exp(-d/36) # Winner-B1 from table 4.7
+    los = np.random.choice([True, False], p=[prob_los, 1-prob_los]) # Roll the dice
+
+    # Compute pathloss (in dB)
+    pl = max(pathloss_freespace(d, f_carr), pathloss_b1(d, f_carr, los=los))
+
+    # Format the pathloss
+    if out_format=='amp':
+        out = db2amp(pl)
+    elif out_format=='pwr':
+        out = db2pwr(pl)
+    elif out_format=='dB':
+        out = pl
+    elif out_format=='prob_los':
+        out = prob_los
+    else:
+        raise ValueError('Invalid output format: "' + out_format + '" not recognized.')
+
+    return out
+
+def drop_unifcircle(N, D):
+    """uniform drop N nodes within a circle of diameter D. Returns x and y coords"""
+    radii = np.random.rand(N)*D/2
+    angle = np.random.rand(N)*2*pi
+    return radii*np.cos(angle), radii*np.sin(angle)
+
+def drop_unifsquare(N, L):
+    """uniform drop N nodes within a square of side L. Returns x and y coords"""
+    return tuple([(np.random.rand(N, 1)-0.5)*L for x in range(2)])
+
 #--------------------
 def buildx(TO,CFO, p):
     """Builds a new x vector with appropriate TO and CFO"""
@@ -831,12 +908,16 @@ def avg_copies(data):
 
     return indeps, avgs, stds
 
-def samples2dist(x, f_samp, unit='km'):
+def samples2dist(x, f_samp, unit='m'):
     """Converts samples to a distance unit (kilometers or meters)"""
     if unit == 'km': unit_fact = SOL/f_samp/1000
     elif unit == 'm': unit_fact = SOL/f_samp
     else: raise('Unknown unit')
     return x*unit_fact
+
+def dist2samples(d, f_samp, unit='m'):
+    """Converts samples to a distance unit (kilometers or meters)"""
+    return d/samples2dist(1,f_samp, unit=unit)
 
 
 ##########################
@@ -855,20 +936,19 @@ class DelayParams(Struct):
     """Parameters class for the delays between nodes"""
     def __init__(self, delay_pdf,
                  taps=1,
-                 t0=0,
-                 t_sigma=0,
+                 max_dist_from_origin=0,
                  p_sigma=0):
 
         if not callable(delay_pdf):
             raise ValueError(type(self).__name__ + " must be initialized with a callable PDF function")
         self.delay_pdf = delay_pdf
+        self.pathloss_fct = pathloss_b1_tot
         self.taps = taps
-        self.t0 = t0
-        self.t_sigma = t_sigma
+        self.max_dist_from_origin = max_dist_from_origin
         self.p_sigma = p_sigma
 
-    def delay_pdf_eval(self, t, **kwargs):
-        return self.delay_pdf(t, self.p_sigma, self.t0, **kwargs)
+    def delay_pdf_eval(self, t, t0=0, **kwargs):
+        return self.delay_pdf(t, self.p_sigma, t0=t0, **kwargs)
 
     def rnd_delay(self,t0, **kwargs):
         """Builds an array of delays with the associated amplitudes. Uniformly picks the delays,
@@ -882,33 +962,45 @@ class DelayParams(Struct):
             amps:  np array of the amplitudes
         """
         delay_list =[t0] +  [np.random.rand()*np.sqrt(12)*self.p_sigma+t0 for x in range(self.taps-1)]
-        amp_list = [self.delay_pdf_eval(t, **kwargs) for t in delay_list]
+        amp_list = [self.delay_pdf_eval(t,t0=t0, **kwargs) for t in delay_list]
         delay = np.array(delay_list, FLOAT_DTYPE)
         amp = np.array(amp_list, FLOAT_DTYPE)
         return delay, amp
 
-    def build_delay_matrix(self, nodecount, basephi, **kwargs):
+    def build_delay_matrix(self, nodecount, basephi, f_samp, f_carr,  **kwargs):
         """From the delay function, initiate an appropriately sized delay matrix into ctrl"""
+        self.f_samp = f_samp
+        self.f_carr = f_carr
+        self.basephi = basephi
         array_dtype_string = INT_DTYPE+','+CPLX_DTYPE
         echoes = np.zeros((nodecount, nodecount, self.taps), dtype=array_dtype_string)
         echoes.dtype.names = ('delay', 'amp')
 
         # Build delay grid 
         tiled = lambda x: np.tile(x, x.shape[0])
-        self.width = np.sqrt(12)*self.t_sigma
-        self.gridx, self.gridy = [(np.random.rand(nodecount, 1)-0.5)*self.width for x in range(2)]
+        self.width = 2*dist2samples(self.max_dist_from_origin, f_samp, unit='m')
+        self.gridx, self.gridy = drop_unifsquare(nodecount, self.width)
         tx, ty = (tiled(self.gridx), tiled(self.gridy))
         self.delay_grid = np.sqrt((tx - tx.T)**2 + (ty - ty.T)**2)
 
+        self.pathloss_grid = self.pathloss_fct(self.delay_grid,
+                                               f_samp, f_carr, out_format='dB')
+
+
+        # Have to use a for loop because reasons
         for k in range(nodecount):
             for l in range(nodecount):
                 if k == l:
                     continue
-                delay, amp = self.rnd_delay(self.delay_grid[k,l], **kwargs)
-                echoes['delay'][k][l] = (delay*basephi).astype(INT_DTYPE)
-                echoes['amp'][k][l] = amp
+                t0 = self.delay_grid[k,l]
+                delay, amp = self.rnd_delay(t0, **kwargs)
+                echoes['delay'][k][l] = (delay).astype(INT_DTYPE)
+                echoes['amp'][k][l] = amp/db2amp(self.pathloss_grid[k,l])
+
+        self.delay_grid = (self.delay_grid*basephi).astype(INT_DTYPE)
 
         return echoes['delay'], echoes['amp']
+
 
 class SyncParams(Struct):
     """Parameter struct containing all the parameters used for the simulation, from the generation of the modulated training sequence to the exponent of the cross-correlation"""

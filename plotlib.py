@@ -387,15 +387,15 @@ def delay_pdf(ctrl, axes=None, savename=''):
     obj = ctrl.delay_params
     fct = obj.delay_pdf_eval
 
-    tmp_sigma = obj.sigma
-    obj.sigma *= ctrl.basephi
+    tmp_sigma = obj.p_sigma
+    obj.p_sigma *= ctrl.basephi
 
-    xmin = obj.t0
+    xmin = 0
     xmax = 4 + xmin
-    x = np.arange(xmin, xmax, 0.01)*obj.sigma
+    x = np.arange(xmin, xmax, 0.01)*obj.p_sigma
     y = np.array(list(map(fct, x)))
 
-    obj.sigma = tmp_sigma
+    obj.p_sigma = tmp_sigma
 
     ax = continuous(x,y,axes=axes)
     ax.set_xlabel('Delay (Samples)')
@@ -407,8 +407,8 @@ def delay_grid(ctrl, unit='km', axes=None, savename=''):
     obj = ctrl.delay_params
     fct = obj.delay_pdf_eval
 
-    x,y = [k*ctrl.basephi for k in [obj.gridx, obj.gridy]]
-    lims = [sign*0.55*obj.width*ctrl.basephi for sign in [-1,1]]
+    x,y = [k for k in [obj.gridx, obj.gridy]]
+    lims = [sign*0.55*obj.width for sign in [-1,1]]
 
     # convert to requested unit
     x,y = [lib.samples2dist(k, ctrl.f_samp, unit) for k in [x,y]]
