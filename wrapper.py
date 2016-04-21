@@ -131,7 +131,9 @@ def dec_wrap2():
     p.bias_removal = False
     p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
     p.train_type = 'single' # Type of training sequence
-    p.crosscorr_fct = 'match_decimate_argmax' 
+    p.crosscorr_type = 'match_decimate' 
+    p.peak_detect = 'wavg' 
+    #p.crosscorr_fct = 'analog' 
     p.pulse_type = 'rootraisedcosine'
     p.central_padding = 0 # As a fraction of zpos length
 
@@ -141,7 +143,7 @@ def dec_wrap2():
     ctrl.basephi = 5000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = False # Needed to draw graphs
-    ctrl.nodecount = 15 # Number of nodes
+    ctrl.nodecount = 6 # Number of nodes
     ctrl.static_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
     ctrl.TO_step_wait = 0
@@ -155,14 +157,6 @@ def dec_wrap2():
     ctrl.rand_init = False
     ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
     ctrl.noise_power = float('-inf')
-
-    ctrl.bmap_reach = 3e-6
-    ctrl.bmap_scaling = 100
-
-    ctrl.cfo_mapper_fct = lib.cfo_mapper_pass
-    ctrl.CFO_processing_avgtype = 'reg'
-    ctrl.CFO_processing_avgwindow = 1
-    ctrl.max_CFO_correction = 1e-6 # As a factor of f_symb
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_exp)
     ctrl.delay_params.taps = 1
@@ -232,10 +226,10 @@ def main_interd():
     ctrl, p, cdict, pdict = dec_wrap2()
     sim = SimWrap(ctrl, p, cdict, pdict)
 
+    print(lib.thy_ssstd(ctrl))
 
     #graphs.freq_response(ctrl.pc_b, ctrl.pc_a); graphs.show(); exit()
     #graphs.delay_pdf(ctrl); graphs.show(); exit()
-    #graphs.delay_grid(ctrl); graphs.show(); exit()
     sim.ctrl.keep_intermediate_values = True
     sim.show_CFO = False
     sim.simulate()
@@ -300,7 +294,7 @@ class SimWrap(lib.Struct):
     
 
 
-    def __init__(self, ctrl, p, cdict=None, pdict=None):
+    def __init__(self, ctrl, p, cdict=None, pdict=None, prep_bary=False):
         """Prepares ctrl & p for simulation"""
         self.add(p=p)
         self.add(ctrl=ctrl)
@@ -309,7 +303,8 @@ class SimWrap(lib.Struct):
         self.p.update()
         self.ctrl.update()
 
-        lib.barywidth_map(self.p, reach=self.ctrl.bmap_reach , scaling_fct=self.ctrl.bmap_scaling , force_calculate=self.force_calculate, disp=self.show_bary)
+        if prep_bary:
+            lib.barywidth_map(self.p, reach=self.ctrl.bmap_reach , scaling_fct=self.ctrl.bmap_scaling , force_calculate=self.force_calculate, disp=self.show_bary)
         if self.force_calculate:
             self.p.update()
             self.ctrl.update()

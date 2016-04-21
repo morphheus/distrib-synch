@@ -63,8 +63,9 @@ class SimControls(lib.Struct):
         self.max_CFO_correction = 0.02 # As a factor of f_symb
         self.CFO_processing_avgtype = 'mov_avg' # 'mov_avg' or 'reg' (non-mov avg)
         self.CFO_processing_avgwindow = 5
-        self.cfo_mapper_fct = lib.cfo_mapper_linear
+        self.cfo_mapper_fct = lib.cfo_mapper_pass
         self.cfo_bias = 0 # in terms of f_samp
+        self.CFO_step_wait = float('inf')
         # Half-duplex constraint - all options relevant only if half_duplex is True
         self.half_duplex = False
         self.hd_slot0 = 0.3 # in terms of phi
@@ -164,7 +165,7 @@ def runsim(p,ctrl):
     analog_pulse = p.analog_sig
 
     # INPUT EXCEPTIONS
-    if not p.init_update or not p.init_basewidth:
+    if not p.init_update or (not p.init_basewidth and ctrl.CFO_step_wait!=float('inf')):
         raise AttributeError("Need to run p.update() and p.calc_base_barywidth before calling runsim()")
     if not ctrl.init_update:
         raise AttributeError("Need to run ctrl.update() before calling runsim()")
@@ -385,7 +386,7 @@ def runsim(p,ctrl):
             # Obtain barycenters
             if winlen > sync_pulse_len + 1:
                 barycenter_range = range(winmin, winmax)
-                barypos, baryneg, corpos, corneg = calc_both_barycenters(p, channels[node,barycenter_range])
+                barypos, baryneg, corpos, corneg = p.estimate_bary( channels[node,barycenter_range])
             else:
                 barypos = winlen - wait_til_adjust[node]
                 baryneg = barypos

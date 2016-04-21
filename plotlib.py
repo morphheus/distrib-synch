@@ -284,7 +284,7 @@ def crosscorr(p, axes=None, savename='', is_zpos=True):
     p.full_sim = False
     p.bias_removal = False
 
-    _, _, rpos, rneg = calc_both_barycenters(p, mode='full')
+    _, _, rpos, rneg = p.estimation_fct( mode='full')
     p.full_sim = tmp_full_sim # Restore entrance value
     p.bias_removal = tmp_bias # Restore entrance value
 
@@ -318,7 +318,7 @@ def crosscorr_both(p, axes=None, savename=''):
     p.full_sim = False
     p.bias_removal = False
 
-    _, _, rpos, rneg = calc_both_barycenters(p,mode='full')
+    _, _, rpos, rneg = p.estimation_fct(mode='full')
     p.full_sim = tmp # Restore entrance value
     p.bias_removal = tmp_bias
 

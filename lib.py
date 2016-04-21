@@ -149,13 +149,29 @@ def rrcosfilter(N, a, T, f, dtype=CPLX_DTYPE, frac_TO=0):
     
     warnings.filterwarnings("always")
     return time,h
-
 #--------------------
 def calc_snr(ctrl,p):
     """Calculates the SNR of the system provided"""
     snr_db = ctrl.trans_power - ctrl.noise_power
     return(snr_db)
 
+def thy_ssstd(ctrl):
+    """Calculated the theoretical steady-state standard deviation.
+    Does not include the effect of multipath"""
+    # Make alpha matrix
+    h = np.abs(ctrl.echo_amp[:,:,0]) # Channel coeffs
+    A = h/h.sum(axis=1)[:,np.newaxis] # Alpha matrix
+    D = ctrl.delay_params.delay_grid # Delay matric
+    N = h.shape[0] # Square size
+    L = np.identity(N) - A
+
+    dbar = (A*D).sum(axis=1).reshape(-1,1)
+
+    LTd = L.T.dot(dbar)
+    cst = np.linalg.norm(LTd)/N
+    ssstd = np.sqrt(((LTd - cst)**2).sum()/N)
+    return ssstd
+    
 def db2amp(db):
     """Converts dbm to power (in miliwat)"""
     return 10**(0.05*db)
@@ -329,7 +345,7 @@ def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=Fa
     for k, val in enumerate(CFO):
         p.CFO = val
         p.update()
-        barypos, baryneg, _, _ = calc_both_barycenters(p)
+        barypos, baryneg, _, _ = p.estimate_bary()
         barywidths[k] = barypos - baryneg
 
     p.CFO = 0
@@ -394,48 +410,29 @@ def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=Fa
     conn.close()
     return CFO, barywidths
 
-def calc_both_barycenters(p, *args,mode='valid'):
+def calc_both_barycenters(p,chan,mode='valid'):
     """Wrapper that calculates the barycenter on the specified channel. If no channel specified,
     it uses analog_sig instead"""
-    if len(args) > 1:
-        raise TypeError('Too many arguments')
+
+    barycorr_kwargs ={'power_weight':p.power_weight, 'bias_thresh':p.bias_removal, 'mode':mode, 'ma_window':p.ma_window, 'peak_detect':p.peak_detect}
     
-    if p.full_sim and len(args) > 0:
-        g = args[0]
-    else:
-        g = p.analog_sig
-
-    # kwargs tha willl be reused
-    barycorr_kwargs ={'power_weight':p.power_weight, 'bias_thresh':p.bias_removal, 'mode':mode, 'ma_window':p.ma_window}
-
-
-    # Decimation handling
-    if 'match_decimate' in p.crosscorr_fct:
-        decimated_signal, start_index, _ = match_decimate(g, p.pulse, p.spacing)
-        symbol_bary, crosscorrpos = barycenter_correlation(p.training_seq , decimated_signal,
-                                                            **barycorr_kwargs) 
-
-        if p.crosscorr_fct == 'match_decimate_argmax':
-            # Redefine barypos using the argmax
-            barypos = start_index + p.spacing*np.argmax(crosscorrpos)
-
-        elif p.crosscorr_fct == 'match_decimate_wavg':
-            barypos = start_index + p.spacing*symbol_bary
-        else:
-            raise Exception('Invalid p.crosscorr_fct string')
-
-        return barypos, barypos, crosscorrpos, crosscorrpos
-
-    # Non-decimation approaches
-    elif p.crosscorr_fct == 'zeropadded':
+    if p.crosscorr_type == 'match_decimate':
+        decimated_signal, start_index, _ = p.match_decimate_fct(chan, p.pulse, p.spacing)
+        f1 = p.zpos
+        f2 = p.zpos.conj()
+        g = decimated_signal
+    elif p.crosscorr_type == 'zeropadded':
         f1 = p.pad_zpos
         f2 = p.pad_zneg
-    elif p.crosscorr_fct == 'analog':
+        g = chan
+    elif p.crosscorr_type == 'analog':
         f1 = p.analog_zpos
         f2 = p.analog_zneg
+        g = chan
     else:
         raise Exception('Invalid p.crosscorr_fct string')
     
+    # Apply the cross-correlations
     barypos, crosscorrpos = barycenter_correlation(f1 , g, **barycorr_kwargs) 
     if p.train_type == 'chain':
         baryneg, crosscorrneg = barycenter_correlation(f2 , g, **barycorr_kwargs) 
@@ -443,23 +440,23 @@ def calc_both_barycenters(p, *args,mode='valid'):
         baryneg = barypos
         crosscorrneg = crosscorrpos
 
+        
+    if p.crosscorr_type == 'match_decimate':
+        barypos, baryneg = [start_index + p.spacing*k for k in [barypos, baryneg]]
+
     return barypos, baryneg, crosscorrpos, crosscorrneg
 
-def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, mode='valid', ma_window=1):
+def barycenter_correlation(f,g, peak_detect='wavg', power_weight=2, bias_thresh=0, mode='valid', ma_window=1):
     """Outputs the barycenter location of 'f' in 'g'. g is expected to be the
     longer array
     Note: barycenter will correspond to the entry IN THE CROSS CORRELATION
-
     bias_thresh will only weight the peaks within bias_thresh of the maximum.
-
     ma_window will run a moving average on the cross-correlation before taking the weighted average
-    
     """
     if len(g) < len(f):
         raise AttributeError("Expected 'g' to be longer than 'f'")
     
     cross_correlation = crosscorr_fct(f, g, mode)
-
     cross_correlation = np.absolute(cross_correlation)
     if bias_thresh:
         """We calculate the bias to remove from the absolute of the crosscorr"""
@@ -468,35 +465,37 @@ def barycenter_correlation(f,g, power_weight=2, method='numpy', bias_thresh=0, m
         cross_correlation -= bias
         np.clip(cross_correlation, 0, float('inf'), out=cross_correlation)
 
-
     # in-place MA filter on the cross correlation
     if ma_window % 2 == 0 or ma_window < 0:
         raise Exception('Moving average window should be odd and positive')
-
     if ma_window != 1:
         cross_correlation = convolve_mov_avg( cross_correlation, ma_window)
 
-
-    
-    # Generete stuff for weighted average
-    weight = cross_correlation**power_weight
-    
-    weightsum = np.sum(weight)
-    lag = np.indices(weight.shape)[0]
-
-    # If empty cross_correlation, return -1. Otherwise, perform weighted average
-    if not weightsum:
-        barycenter = -1
-    else:
-        barycenter = np.sum(weight*lag)/weightsum
-
+    # Peak detection (weighted average vs argmax
+    if peak_detect == 'wavg':
+        weight = cross_correlation**power_weight
+        weightsum = np.sum(weight)
+        lag = np.indices(weight.shape)[0]
+        if not weightsum:
+            barycenter = -1
+        else:
+            barycenter = np.sum(weight*lag)/weightsum
+    elif peak_detect == 'argmax':
+        barycenter  = np.argmax(cross_correlation)
 
     if mode == 'valid':
         barycenter += math.floor(len(f)/2) # Correct for valid mode
     
     return barycenter, cross_correlation
 
-def match_decimate(signal, pulse, spacing, mode='same'):
+def barycenter_argmax(f,g, mode='same'):
+    """Arg max based crosscorrelation"""
+    crosscorr = np.abs(crosscorr_fct(f, g, mode=mode))
+    if mode == 'valid':
+        barycenter += math.floor(len(f)/2) # Correct for valid mode
+    return barycenter, crosscorr
+    
+def md_energy(signal, pulse, spacing, mode='same'):
     """Cross-correlated the signal with the shaping pulse
     Then, decimate the resulting signal such that the output has the highest energy
     signal : Signal to pply matched filter on
@@ -652,6 +651,7 @@ def pathloss_b1_tot(x, f_samp, f_carr, out_format='amp'):
 
     # Compute pathloss (in dB)
     pl = max(pathloss_freespace(d, f_carr), pathloss_b1(d, f_carr, los=los))
+    #pl = pathloss_freespace(d, f_carr)
 
     # Format the pathloss
     if out_format=='amp':
@@ -780,6 +780,13 @@ def ll_redux_2d(p,t0,l0, theta_range, deltaf_range, var_w=1):
 
     
     return loglike
+
+def symmetrify(arr):
+    """Copies the uppertriangular elements over the lower triangular elements."""
+    if len(arr.shape) != 2 or arr.shape[0] != arr.shape[1]:
+        raise ValueError('Expected input to be a square array')
+
+    return np.triu(arr,0) + np.triu(arr,1).T
 
 #--------------------
 def hipass_avg(N):
@@ -986,6 +993,7 @@ class DelayParams(Struct):
         self.pathloss_grid = self.pathloss_fct(self.delay_grid,
                                                f_samp, f_carr, out_format='dB')
 
+        self.pathloss_grid = symmetrify(self.pathloss_grid)
 
         # Have to use a for loop because reasons
         for k in range(nodecount):
@@ -997,7 +1005,7 @@ class DelayParams(Struct):
                 echoes['delay'][k][l] = (delay).astype(INT_DTYPE)
                 echoes['amp'][k][l] = amp/db2amp(self.pathloss_grid[k,l])
 
-        self.delay_grid = (self.delay_grid*basephi).astype(INT_DTYPE)
+        self.delay_grid = (self.delay_grid).astype(INT_DTYPE)
 
         return echoes['delay'], echoes['amp']
 
@@ -1024,9 +1032,22 @@ class SyncParams(Struct):
         self.init_update = False
         self.init_basewidth = False
         self.bias_removal = False
-        self.crosscorr_fct = 'analog'
+        self.crosscorr_type = 'analog'
         self.central_padding = 0 # As a fraction of zpos length
         self.ma_window = 1
+        self.match_decimate_fct = md_energy
+        self.estimation_fct = calc_both_barycenters
+
+    def estimate_bary(self, *args, **kwargs):
+        """Wrapper for estimation fct"""
+        if len(args) > 1:
+            raise TypeError('Too many arguments')
+
+        if self.full_sim and len(args) > 0:
+            g = args[0]
+        else:
+            g = self.analog_sig
+        return self.estimation_fct(self, g, **kwargs)
 
     def build_training_sequence(self):
         """Builds training sequence from current parameters"""
@@ -1070,7 +1091,7 @@ class SyncParams(Struct):
         CFO_tmp = self.CFO
         self.full_sim = False
         self.update()
-        barypos, baryneg, _, _ = calc_both_barycenters(self)
+        barypos, baryneg, _, _ = self.estimate_bary()
         self.add(basewidth=barypos-baryneg)
 
 
@@ -1080,12 +1101,12 @@ class SyncParams(Struct):
         
         self.CFO = -1*loc*self.f_symb
         self.update()
-        barypos, baryneg, _, _ = calc_both_barycenters(self)
+        barypos, baryneg, _, _ = self.estimate_bary()
         lowidth = barypos-baryneg
         
         self.CFO = loc*self.f_symb
         self.update()
-        barypos, baryneg, _, _ = calc_both_barycenters(self)
+        barypos, baryneg, _, _ = self.estimate_bary()
         hiwidth = barypos-baryneg
         
         slope = (hiwidth - lowidth)/(self.CFO*2)
@@ -1165,7 +1186,7 @@ class SyncParams(Struct):
 
             self.build_analog_sig()
             self.bias_removal = False
-            _, _, cpos, _ = calc_both_barycenters(self)
+            _, _, cpos, _ = self.estimate_bary()
             N = len(cpos)
             if self.train_type == 'chain':
                 max1 = np.max(cpos[math.ceil(N/2):])
