@@ -418,7 +418,7 @@ def fetch_cols(date, collist , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
 
     return c.fetchall()[0]
 
-def fetch_last_n(n, collist=None, asdict=False, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False, dateid=True):
+def fetch_last_n(n, collist=None, asdict=False, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
     """Fetches the n most recent entries in the table"""
     close_conn = False
     if conn == False: 
@@ -430,8 +430,10 @@ def fetch_last_n(n, collist=None, asdict=False, tn=DEF_TABLE, dbase_file=DEF_DB,
     if collist is None:
         colstring = '*'
     else:
-        colstring = 'date,' if dateid else ''
-        colstring += ','.join(collist)
+        colstring = 'date'
+        tmp = ','.join(collist)
+        if tmp:
+            colstring += ',' + tmp
     
     string = "SELECT " + colstring + " FROM " + tn + " ORDER BY date DESC LIMIT " + str(n)
     cursor = c.execute(string)
@@ -447,6 +449,11 @@ def fetch_last_n(n, collist=None, asdict=False, tn=DEF_TABLE, dbase_file=DEF_DB,
         conn.close()
 
     return output
+
+def fetch_last_n_dates(n, **kwargs):
+    """Fetches the last n dates"""
+    db_out = fetch_last_n(n, [''])
+    return [k[0] for k in db_out]
 
 
 

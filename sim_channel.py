@@ -83,6 +83,7 @@ class SimControls(lib.Struct):
         self.pc_step_wait = 20
         self.pc_b, self.pc_a = lib.hipass_avg(5)
         self.pc_std_thresh = float('inf')
+        self.pc_avg_thresh = float('inf')
 
         # Other
         self.init_update = True
@@ -237,6 +238,7 @@ def runsim(p,ctrl):
     deltaf = np.random.uniform(deltaf_minmax[0],deltaf_minmax[1], size=nodecount)
     clk_creation = np.random.randint(0,chansize, size=nodecount)
     channels = lib.cplx_gaussian( [nodecount,chansize], noise_var) 
+    md_static_offset = clk_creation % p.spacing
 
     if ctrl.max_start_delay:
         start_delay = np.random.randint(0, ctrl.max_start_delay, size=nodecount)*basephi
@@ -264,7 +266,7 @@ def runsim(p,ctrl):
 
     if ctrl.display:
         print('Theta std init: ' + str(np.std(theta)))
-        print('deltaf std init: ' + str(np.std(deltaf)) + '    spread: '+ str(max(deltaf) -min(deltaf))+ '\n')
+        #print('deltaf std init: ' + str(np.std(deltaf)) + '    spread: '+ str(max(deltaf) -min(deltaf))+ '\n')
 
 
     # Local fct to add intermediate values, if necessary
@@ -386,7 +388,7 @@ def runsim(p,ctrl):
             # Obtain barycenters
             if winlen > sync_pulse_len + 1:
                 barycenter_range = range(winmin, winmax)
-                barypos, baryneg, corpos, corneg = p.estimate_bary( channels[node,barycenter_range])
+                barypos, baryneg, corpos, corneg = p.estimate_bary( channels[node,barycenter_range], md_start_idx=md_static_offset[node])
             else:
                 barypos = winlen - wait_til_adjust[node]
                 baryneg = barypos
@@ -407,16 +409,26 @@ def runsim(p,ctrl):
             TO = round(TO*epsilon_TO)
 
             # Prop delay correction
-            if do_pc_step_wait[node] > ctrl.pc_step_wait and ctrl.prop_correction:
+            if do_pc_step_wait[node] > ctrl.pc_step_wait and ctrl.prop_correction and wait_emit[node] >= ctrl.TO_step_wait:
                 prev_TOx[node].appendleft(TO)
                 #print(prev_TOx[node])
                 #print(pc_b)
                 #print(prev_TOy[node])
                 #print(pc_a)
-                TO = (prev_TOx[node]*pc_b).sum() - (prev_TOy*pc_a[1:]).sum()
-                prev_TOy[node].appendleft(TO)
+                TOy = (prev_TOx[node]*pc_b).sum() - (prev_TOy*pc_a[1:]).sum()
+                prev_TOy[node].appendleft(TOy)
+
+                
+
+                # Only do if near a steady state
+                #if np.mean(prev_TOx) < ctrl.pc_avg_thresh:
+                #    TO = TOy
+                if np.std(prev_TOx) < ctrl.pc_std_thresh:
+                    TO = TOy
+                
             else:
                 do_pc_step_wait[node] += 1
+
 
             # If TO leads to an adjustement bigger than cursample, something may have gone wrong.
             if not np.isfinite(TO):
@@ -512,7 +524,7 @@ def runsim(p,ctrl):
 
     if ctrl.display:
         print('theta STD: ' + str(np.std(theta)))
-        print('deltaf STD: ' + str(np.std(deltaf)) + '    spread: ' + str(max(deltaf)-min(deltaf)))
+        #print('deltaf STD: ' + str(np.std(deltaf)) + '    spread: ' + str(max(deltaf)-min(deltaf)))
 
 
     # Add all calculated values with the controls parameter structure
@@ -523,6 +535,8 @@ def runsim(p,ctrl):
     ctrl.deltaf_ssstd = np.std(deltaf)
     ctrl.phi_ssstd = np.std(phi)
     ctrl.simulated = True
+
+    
 
     if ctrl.keep_intermediate_values:
         ctrl.sample_inter = sample_inter

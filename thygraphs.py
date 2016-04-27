@@ -50,6 +50,29 @@ def ml_pinit_no_pulse_shape():
     return p 
 
 
+def pinit64_no_pulse_shape():
+    p = lib.SyncParams()
+    p.zc_len = 63
+    p.plen = 1
+    p.rolloff = 0.2
+    p.f_samp = 1e6
+    p.f_symb = 1e6
+    #p.f_symb = 0.25e6
+    p.repeat = 1
+    p.spacing_factor = 1 # CHANGE TO TWO!
+    p.power_weight = 4
+    p.full_sim = True
+    p.bias_removal = False
+    p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
+    p.train_type = 'chain' # Type of training sequence
+    p.crosscorr_fct = 'analog' 
+    p.pulse_type = 'raisedcosine'
+    p.central_padding = 0 # As a fraction of zpos length
+    p.CFO = 1
+    p.update()
+    return p
+
+
 def ml_full_3d(noise_var=1, fct=lib.ll_redux_2d):
     """Graphs a 3d surface of the specified ML fct"""
     p = ml_pinit_no_pulse_shape()
@@ -79,7 +102,7 @@ def ml_full_3d(noise_var=1, fct=lib.ll_redux_2d):
     z = loglike*1e-3
 
     # Plot prameters
-    fig, ax = graphs.surfwowair declinedace3d(x, y, z, density=40)
+    fig, ax = graphs.surface3d(x, y, z, density=40)
     ax.set_xlabel('Time offset (samples)')
     ax.set_ylabel('CFO (ppm)')
     ax.set_zlabel('Log likelihood (1e3)')
@@ -163,8 +186,11 @@ def ml_full_one(variable='CFO',noise_var=1):
     
     graphs.show()
 
-
-
+def zero_padded_crosscorr():
+    p = pinit64_no_pulse_shape()
+    ax = graphs.crosscorr_both(p, savename='latex_figures/discrete_crosscorr');
+    graphs.show()
+    return ax
 
 # MAIN
 if __name__ == '__main__':

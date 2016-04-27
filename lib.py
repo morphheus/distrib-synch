@@ -150,6 +150,7 @@ def rrcosfilter(N, a, T, f, dtype=CPLX_DTYPE, frac_TO=0):
     warnings.filterwarnings("always")
     return time,h
 #--------------------
+#---------------------------
 def calc_snr(ctrl,p):
     """Calculates the SNR of the system provided"""
     snr_db = ctrl.trans_power - ctrl.noise_power
@@ -171,7 +172,7 @@ def thy_ssstd(ctrl):
     cst = np.linalg.norm(LTd)/N
     ssstd = np.sqrt(((LTd - cst)**2).sum()/N)
     return ssstd
-    
+
 def db2amp(db):
     """Converts dbm to power (in miliwat)"""
     return 10**(0.05*db)
@@ -286,6 +287,7 @@ def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=Fa
 
     """It also does a linear regression to the data"""
 
+    raise ValueError('stuff')
 
     if not float(scaling_fct).is_integer():
         ValueError('Scaling must be an integer')
@@ -410,17 +412,16 @@ def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=Fa
     conn.close()
     return CFO, barywidths
 
-def calc_both_barycenters(p,chan,mode='valid'):
+def calc_both_barycenters(p,chan, mode='valid' , md_start_idx=0):
     """Wrapper that calculates the barycenter on the specified channel. If no channel specified,
     it uses analog_sig instead"""
 
     barycorr_kwargs ={'power_weight':p.power_weight, 'bias_thresh':p.bias_removal, 'mode':mode, 'ma_window':p.ma_window, 'peak_detect':p.peak_detect}
     
     if p.crosscorr_type == 'match_decimate':
-        decimated_signal, start_index, _ = p.match_decimate_fct(chan, p.pulse, p.spacing)
+        g, start_index, _ = p.match_decimate_fct(chan, p.pulse, p.spacing, md_start_idx)
         f1 = p.zpos
         f2 = p.zpos.conj()
-        g = decimated_signal
     elif p.crosscorr_type == 'zeropadded':
         f1 = p.pad_zpos
         f2 = p.pad_zneg
@@ -462,8 +463,8 @@ def barycenter_correlation(f,g, peak_detect='wavg', power_weight=2, bias_thresh=
         """We calculate the bias to remove from the absolute of the crosscorr"""
         maxval = np.max(cross_correlation)
         bias = maxval*bias_thresh
-        cross_correlation -= bias
-        np.clip(cross_correlation, 0, float('inf'), out=cross_correlation)
+        cross_correlation[cross_correlation < bias] = 0
+
 
     # in-place MA filter on the cross correlation
     if ma_window % 2 == 0 or ma_window < 0:
@@ -488,19 +489,14 @@ def barycenter_correlation(f,g, peak_detect='wavg', power_weight=2, bias_thresh=
     
     return barycenter, cross_correlation
 
-def barycenter_argmax(f,g, mode='same'):
-    """Arg max based crosscorrelation"""
-    crosscorr = np.abs(crosscorr_fct(f, g, mode=mode))
-    if mode == 'valid':
-        barycenter += math.floor(len(f)/2) # Correct for valid mode
-    return barycenter, crosscorr
-    
-def md_energy(signal, pulse, spacing, mode='same'):
+def md_energy(signal, pulse, spacing, expected_start_index=0, mode='same'):
     """Cross-correlated the signal with the shaping pulse
     Then, decimate the resulting signal such that the output has the highest energy
     signal : Signal to pply matched filter on
     pulse  : Signal to match filter with
-    spacing: Symbol period, in samples"""
+    spacing: Symbol period, in samples
+    expectd_start_idx: not used
+    """
 
     cross_correlation = crosscorr_fct(pulse,signal, mode)
 
@@ -517,6 +513,37 @@ def md_energy(signal, pulse, spacing, mode='same'):
     decimated = cross_correlation[decimated_start_index::spacing]
     
     return decimated, decimated_start_index,  cross_correlation
+
+def md_static(signal, pulse, spacing, expected_start_index=0, mode='same'):
+    """Cross-correlates the signal with the shaping pulse
+    Then, decimates the resulting signal starting at the specified start index
+    signal : Signal to pply matched filter on
+    pulse  : Signal to match filter with
+    spacing: Symbol period, in samples"""
+
+    cross_correlation = crosscorr_fct(pulse,signal, mode)
+    # Pick decimation with highest energy
+    abs_crosscorr = np.abs(cross_correlation)
+    decimated = cross_correlation[expected_start_index::spacing]
+    
+    return decimated, expected_start_index,  cross_correlation
+
+def md_clkphase(signal, pulse, spacing, expected_start_index=0, mode='same'):
+    """Cross-correlates the signal with the shaping pulse
+    Then, decimates the resulting signal starting at the specified start index
+    signal : Signal to pply matched filter on
+    pulse  : Signal to match filter with
+    spacing: Symbol period, in samples"""
+
+    cross_correlation = crosscorr_fct(pulse,signal, mode)
+    # Pick decimation with highest energy
+    abs_crosscorr = np.abs(cross_correlation)
+
+    start_index = (len(signal)-1) % spacing
+    #decimated = cross_correlation[::-1][0::spacing][::-1]
+    decimated = cross_correlation[start_index::spacing]
+    
+    return decimated, start_index,  cross_correlation
 
 #--------------------
 def cfo_mapper_pass(barywidth, p):
@@ -1009,7 +1036,6 @@ class DelayParams(Struct):
 
         return echoes['delay'], echoes['amp']
 
-
 class SyncParams(Struct):
     """Parameter struct containing all the parameters used for the simulation, from the generation of the modulated training sequence to the exponent of the cross-correlation"""
 
@@ -1037,6 +1063,7 @@ class SyncParams(Struct):
         self.ma_window = 1
         self.match_decimate_fct = md_energy
         self.estimation_fct = calc_both_barycenters
+        self.peak_detect = 'wavg'
 
     def estimate_bary(self, *args, **kwargs):
         """Wrapper for estimation fct"""
@@ -1159,6 +1186,7 @@ class SyncParams(Struct):
         
         pad_zneg = pad_zpos.conjugate()
 
+        
         self.add(pad_zpos=pad_zpos)
         self.add(pad_zneg=pad_zneg)
         self.add(analog_sig=analog_sig)
@@ -1201,6 +1229,7 @@ class SyncParams(Struct):
             #Cleanup if needed
             if tmp_full_sim:
                 self.full_sim = True
+                self.build_analog_sig()
         # If no bias removal, or already computed, just build  
         else:
             self.build_analog_sig()

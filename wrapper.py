@@ -9,6 +9,7 @@ import numpy as np
 import warnings
 import inspect
 import time
+import thygraphs
 
 from numpy import pi
 
@@ -22,7 +23,7 @@ from sim_channel import runsim, SimControls
 def dec_wrap1():
     """Chained ZC sequences"""
     p = lib.SyncParams()
-    p.zc_len = 71
+    p.zc_len = 64
     p.plen = 31
 
     p.rolloff = 0.2
@@ -115,53 +116,56 @@ def dec_wrap1():
 def dec_wrap2():
     """Single ZC sequence with Decimation"""
     p = lib.SyncParams()
-    p.zc_len = 71
-    p.plen = 31
+    p.zc_len = 73
+    p.plen = 61
 
     p.rolloff = 0.2
     #p.f_samp = 4e6
     #p.f_symb = 1e6
-    p.f_samp = 30.72e6
-    p.f_symb = p.f_samp/4
+    p.f_symb = 30.72e6
+    p.f_samp = p.f_symb*8
     p.repeat = 1
     p.spacing_factor = 1 # CHANGE TO TWO!
 
     p.power_weight = 2
     p.full_sim = True
-    p.bias_removal = False
+    p.bias_removal = True
     p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
     p.train_type = 'single' # Type of training sequence
     p.crosscorr_type = 'match_decimate' 
+    p.match_decimate_fct = lib.md_clkphase
     p.peak_detect = 'wavg' 
-    #p.crosscorr_fct = 'analog' 
     p.pulse_type = 'rootraisedcosine'
     p.central_padding = 0 # As a fraction of zpos length
 
 
     ctrl = SimControls()
-    ctrl.steps = 100 # Approx number of emissions per node
-    ctrl.basephi = 5000 # How many samples between emission
+    ctrl.steps = 80 # Approx number of emissions per node
+    ctrl.basephi = 6000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = False # Needed to draw graphs
-    ctrl.nodecount = 6 # Number of nodes
+    ctrl.nodecount = 15 # Number of nodes
     ctrl.static_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
-    ctrl.TO_step_wait = 0
-    ctrl.max_start_delay = 0 # In factor of basephi
+    ctrl.TO_step_wait = 4
+    ctrl.max_start_delay = 30 # In factor of basephi
 
     ctrl.theta_bounds = [0.3,0.7] # In units of phi
     #ctrl.theta_bounds = [0.48,0.52] # In units of phi
     #ctrl.theta_bounds = [0.5,0.5] # In units of phi
+    ctrl.theta_bounds = [0,1] # In units of phi
     ctrl.deltaf_bound = 3e-2
     #ctrl.deltaf_bound = 0
     ctrl.rand_init = False
+    ctrl.epsilon_TO = 0.5
     ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
-    ctrl.noise_power = float('-inf')
+    #ctrl.noise_power = float('-inf')
+    ctrl.noise_power = -101 + 9 # in dbm
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_exp)
-    ctrl.delay_params.taps = 1
-    ctrl.delay_params.max_dist_from_origin = 0 # (in meters)
-    ctrl.delay_params.p_sigma = 0 # Paths sigma
+    ctrl.delay_params.taps = 4
+    ctrl.delay_params.max_dist_from_origin = 250 # (in meters)
+    ctrl.delay_params.p_sigma = 0.02 # Paths sigma
 
     ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
@@ -185,29 +189,33 @@ def dec_wrap2():
     #ctrl.pc_b, ctrl.pc_a = lib.hipass_remez(20)
     #ctrl.pc_b, ctrl.pc_a = lib.hipass_butter(8)
     #ctrl.pc_b, ctrl.pc_a = lib.hipass_cheby(8)
-    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(20)
-    ctrl.pc_std_thresh = float('inf')
+    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(15)
+    ctrl.pc_avg_thresh = float('inf') # If std of N previous TOx samples is above this value, then\
+    ctrl.pc_std_thresh = float(50) # If std of N previous TOx samples is above this value, then\
+                     # no PC is applied (but TOy is still calculated)
     
     ctrl.saveall = True
 
 
     cdict = {
-        'nodecount':[x for x in range(5,15)]
+        'nodecount':[x for x in range(10,121,10)]
+        #'nodecount':[x for x in range(3,8)]
         }
 
     pdict = {}
+    #pdict = {'match_decimate_fct':[lib.md_clkphase, lib.md_energy]}
 
     return ctrl, p, cdict, pdict
 
 #------------------------
 def main_thesis():
 
+
     ctrl, p, cdict, pdict = dec_wrap1()
     sim = SimWrap(ctrl, p, cdict, pdict)
 
 
-    #graphs.barywidth_wrap(p,ctrl, force_calculate=True); graphs.show(); exit()
-    #graphs.crosscorr(p); graphs.show(); exit()
+    graphs.crosscorr(p); graphs.show(); exit()
 
     #graphs.freq_response(ctrl.pc_b, ctrl.pc_a); graphs.show(); exit()
     #graphs.delay_pdf(ctrl); graphs.show(); exit()
@@ -220,37 +228,46 @@ def main_thesis():
     sim.post_sim_plots()
     exit()
 
+
+    # Figures and output names!
+    thygraphs.zero_padded_crosscorr(); exit()
+
 def main_interd():
 
 
     ctrl, p, cdict, pdict = dec_wrap2()
     sim = SimWrap(ctrl, p, cdict, pdict)
 
-    print(lib.thy_ssstd(ctrl))
 
+    #print(lib.thy_ssstd(ctrl))
     #graphs.freq_response(ctrl.pc_b, ctrl.pc_a); graphs.show(); exit()
     #graphs.delay_pdf(ctrl); graphs.show(); exit()
-    sim.ctrl.keep_intermediate_values = True
-    sim.show_CFO = False
-    sim.simulate()
-    sim.eval_convergence()
-    sim.post_sim_plots()
-    exit()
+    #graphs.delay_grid(ctrl); graphs.show(); exit()
+    #sim.ctrl.keep_intermediate_values = True
+    #sim.show_CFO = False
+    #sim.simulate()
+    #sim.eval_convergence()
+    #sim.post_sim_plots()
+    #exit()
 
     sim.set_all_nodisp()
+    sim.ctrl.keep_intermediate_values = True
     sim.make_plots = False
-    sim.repeat = 4
+    sim.repeat = 10
+    sim.ctrl.rand_init = True
 
 
 
 
-    tsims = sim.total_sims('all')
-    dates = sim.simmany('all'); dates = [dates[0], dates[-1]]
+    simstr = 'one'
+    tsims = sim.total_sims(simstr)
+    dates = sim.simmany(simstr); #dates = [dates[0], dates[-1]]
     #dates = [20160316135854599,  20160316135906136]
-    collist = ['nodecount', 'theta_ssstd']
+
+    dates = db.fetch_last_n_dates(tsims); dates = [dates[0], dates[-1]]
+    collist = ['nodecount', 'good_link_ratio']
     graphs.scatter_range(dates, collist)
     graphs.show()
-
 
     exit()
     #db_out = np.array(db.fetch_last_n(tsims, ['nodecount', 'theta_ssstd'], dateid=True))
@@ -281,6 +298,8 @@ class SimWrap(lib.Struct):
     show_SNR = True
     show_siglen = True
     show_bary = False
+    show_elapsed = True
+    show_eval_convergence = True
     repeat = 1
     last_msg_len = 0
 
@@ -290,7 +309,7 @@ class SimWrap(lib.Struct):
     #Convergence criterions
     conv_eval_cfo = False
     conv_min_slope_samples = 5 # Minimum # of samples to take for slope eval
-    conv_offset_limits = [-16, 1] # How many symbols to be outside the cyclic prefix IN SYMBOLS
+    conv_offset_limits = [-3.4, 1.8] # In micro seconds
     
 
 
@@ -302,6 +321,7 @@ class SimWrap(lib.Struct):
         self.ctrl.f_samp = p.f_samp
         self.p.update()
         self.ctrl.update()
+        self.prep_bary = prep_bary
 
         if prep_bary:
             lib.barywidth_map(self.p, reach=self.ctrl.bmap_reach , scaling_fct=self.ctrl.bmap_scaling , force_calculate=self.force_calculate, disp=self.show_bary)
@@ -354,26 +374,39 @@ class SimWrap(lib.Struct):
         self.show_SNR = False
         self.show_siglen = False
         self.show_bary = False
+        self.show_elapsed = False
         self.ctrl.display = False
+        self.show_eval_convergence = False
 
     def simulate(self):
         """Simulate and run post-sim stuff, such as graphs or output saving"""
 
         # Some display stuff
         msg = ''
-        siglen_value = "{:.2f}".format(len(self.p.analog_sig)/self.ctrl.basephi)
-        if self.show_siglen: msg = 'Sync signal length: ' + siglen_value + ' basephi' + '    '
+        if self.show_siglen:
+            siglen_value = "{:.2f}".format(len(self.p.analog_sig)/self.ctrl.basephi)
+            msg = 'Sync signal length: ' + siglen_value + ' basephi' + '    '
 
-        stats = self.snr_stats()[0]
-        stats_str = '(' + ', '.join(['{0:.2f}'.format(k) for k in stats]) + ') dB'
-        if self.show_SNR: msg += 'SNR (max, median, min): ' + stats_str
+        if self.show_SNR:
+            stats = self.snr_stats()[0]
+            stats_str = '(' + ', '.join(['{0:.2f}'.format(k) for k in stats]) + ') dB'
+            msg += 'SNR (max, median, min): ' + stats_str
+
+        if self.show_elapsed:
+            tf = time.clock
+            t0 = tf()
 
         if msg!='': print(msg)
 
         # Exec the simulation and save the output
         runsim(self.p, self.ctrl)
+        self.ctrl.add(**self.eval_convergence())
         self.ctrl.date = lib.build_timestamp_id();
         db.add(self.ctrl.__dict__)
+
+        
+        if self.show_elapsed:
+            print('Elapsed: ' + "%2.2f"%(tf()-t0) + ' seconds.')
 
     def simmany(self, assign_method='all'):
         """Simulates many simulations according to the simdicts"""
@@ -407,6 +440,7 @@ class SimWrap(lib.Struct):
                 msg += "%2.2f"%(count*100/tsims) + "% done"
                 oprint(msg)
                 count += 1
+                print(self.ctrl.nodecount)
                 self.simulate()
         oprint(' '*len(msg))
         print('Done simmany in ' + "%2.2f"%(tf()-t0) + ' seconds.')
@@ -435,7 +469,8 @@ class SimWrap(lib.Struct):
                 for key in todel: 
                     del d[key]
             
-            self.update_bary()
+            if self.prep_bary:
+                self.update_bary()
             yield True
 
         yield False # When both dicts are empty,  return false.
@@ -452,7 +487,8 @@ class SimWrap(lib.Struct):
                 for key, lst in d.items():
                     while lst: 
                         obj.change(key, lst.pop())
-                        self.update_bary()
+                        if self.prep_bary:
+                            self.update_bary()
                         yield True
                     if not lst: 
                         todel.append(key)
@@ -484,7 +520,7 @@ class SimWrap(lib.Struct):
         
         return count*self.repeat
 
-    def eval_convergence(self, disp=True):
+    def eval_convergence(self):
         """Evaluates if convergence has been achieved"""
         if not self.ctrl.simulated:
             raise Exception("Function must be executed after a simulation has been done")
@@ -524,13 +560,13 @@ class SimWrap(lib.Struct):
         offsets = offset_grid[~np.eye(offset_grid.shape[0], dtype=bool)]
         linkcount = len(offsets)
 
-        lo, hi = [k*self.p.spacing for k in self.conv_offset_limits]
+        lo, hi = [k*1e-6*self.p.f_samp for k in self.conv_offset_limits]
         good_links = ((offsets>lo) & (offsets<hi)).sum()
 
         output['good_link_ratio'] = good_links/linkcount
 
         
-        if disp:
+        if self.show_eval_convergence:
             for key, item in sorted(output.items()):
                 print(key + ": " + str(item))
 

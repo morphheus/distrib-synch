@@ -21,8 +21,10 @@ GRAPH_OUTPUT_LOCATION = 'graphs/' # don't forget the trailing slash
 GRAPHDUMP_OUTPUT_LOCATION = 'graphdump/' # don't forget the trailing slash
 GRAPH_OUTPUT_FORMAT = 'eps'
 
-matplotlib.rcParams.update({'font.size': 14})
-
+FONTSIZE = 16
+matplotlib.rcParams.update({'font.size': FONTSIZE})
+#matplotlib.rc('font',**{'sans-serif':['Helvetica']})
+#matplotlib.rc('text', usetex=True)
 
 #----- HELPER FCTS
 def remove_zeropad(x,y,repad_ratio):
@@ -40,7 +42,7 @@ def remove_zeropad(x,y,repad_ratio):
     outy = y[lo:(hi+1)]
     return outx,outy
 
-def discrete(*args, axes=None):
+def discrete(*args, label='curve0', axes=None):
     """Plots a discrete graph with vertical bars"""
     if len(args) < 1 and len(args) > 2:
         raise Exception("Too many or too little inputs")
@@ -284,7 +286,7 @@ def crosscorr(p, axes=None, savename='', is_zpos=True):
     p.full_sim = False
     p.bias_removal = False
 
-    _, _, rpos, rneg = p.estimation_fct( mode='full')
+    _, _, rpos, rneg = p.estimate_bary( mode='full')
     p.full_sim = tmp_full_sim # Restore entrance value
     p.bias_removal = tmp_bias # Restore entrance value
 
@@ -300,16 +302,16 @@ def crosscorr(p, axes=None, savename='', is_zpos=True):
 
     x = np.arange(len(y)) - int(math.floor(len(y)/2))
     ax = continuous(x,y, axes=axes, label=label)
-    ax.set_xlabel('l')
-    ax.set_ylabel('|r[l]|')
+    ax.set_xlabel(r'$l$')
+    ax.set_ylabel(r'$|R_{sz_u}[l]|$')
     if label is not None: ax.legend()
 
     save(savename)
-    return x, y, rpos, rneg
+    return x, y, rpos, rneg, ax
 
 def crosscorr_zneg(p, axes=None, savename=''):
     """Same as crosscorr, but with zneg instead"""
-    crosscorr(p, axes=axes, savename=savename, is_zpos=False)
+    return crosscorr(p, axes=axes, savename=savename, is_zpos=False)
 
 def crosscorr_both(p, axes=None, savename=''):
     """Builds a crosscorrelation graph from the crosscorrelation of both zpos and zneg"""
@@ -318,7 +320,7 @@ def crosscorr_both(p, axes=None, savename=''):
     p.full_sim = False
     p.bias_removal = False
 
-    _, _, rpos, rneg = p.estimation_fct(mode='full')
+    _, _, rpos, rneg = p.estimate_bary(mode='full')
     p.full_sim = tmp # Restore entrance value
     p.bias_removal = tmp_bias
 
@@ -330,13 +332,13 @@ def crosscorr_both(p, axes=None, savename=''):
     y1 = rneg
     x = np.arange(len(y0)) - int(math.floor(len(y0)/2))
 
-    ax = continuous(x,y0, axes=axes, label='Leading')
-    ax.plot(x, y1, label='Trailing')
+    ax = continuous(x,y0, axes=axes, label=r'$|R_{sz_+}[l]|$')
+    ax.plot(x, y1, label=r'$|R_{sz_-}[l]|$', color='red')
 
-    ax.set_xlabel('l')
-    ax.set_ylabel('|r[l]|')
+    ax.set_xlabel(r'$l$')
+    ax.set_ylabel(r'$|R_{sz_{\pm u}}[l]|$')
 
-    ax.legend()
+    ax.legend(loc='best', fancybox=True, framealpha=0, fontsize=FONTSIZE-2)
     save(savename)
     return ax
 
@@ -524,7 +526,18 @@ def scatter_range(dates, collist, axes=None, savename=''):
             '_' + '-'.join([lib.base62_encode(x) for x in tmp])
 
 
-    ax = scatter(x, y, ystd, collist[0], collist[1], savename=sname)
+    ax = scatter(x, y, ystd, collist[0], collist[1])
+
+    xmin = max(x)
+    xmax = min(x)
+    ymin, ymax = ax.get_ylim()
+    tmpy = ymax-ymin
+    ymin, ymax = (ymin-0.05*tmpy, ymax+0.05*tmpy)
+    tmpx = xmax-xmin
+    xmin, xmax = (xmin-0.05*tmpx, xmax+0.05*tmpx)
+    
+    ax.set_ylim([ymin,ymax])
+    ax.set_xlim([xmin,xmax])
 
     return ax
 
