@@ -21,7 +21,7 @@ GRAPH_OUTPUT_LOCATION = 'graphs/' # don't forget the trailing slash
 GRAPHDUMP_OUTPUT_LOCATION = 'graphdump/' # don't forget the trailing slash
 GRAPH_OUTPUT_FORMAT = 'eps'
 
-FONTSIZE = 16
+FONTSIZE = 19
 matplotlib.rcParams.update({'font.size': FONTSIZE})
 #matplotlib.rc('font',**{'sans-serif':['Helvetica']})
 #matplotlib.rc('text', usetex=True)
@@ -91,7 +91,7 @@ def continuous(*args, label='curve0', axes=None):
 
     return ax
 
-def scatter(x, y, yerr, x_label='', y_label='',axes=None, savename=''):
+def scatter(x, y, yerr, x_label='', y_label='',axes=None, savename='', **kwargs):
     """Scatter plot, with errorbars if specified"""
 
     if axes == None:
@@ -99,7 +99,7 @@ def scatter(x, y, yerr, x_label='', y_label='',axes=None, savename=''):
     else:
         ax = axes
 
-    lh = ax.errorbar(x, y, yerr, fmt='.', color='k', capsize=0 )
+    lh = ax.errorbar(x, y, yerr, capsize=0, **kwargs )
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
 
@@ -127,42 +127,50 @@ def save(name, **kwargs):
 def show():
     plt.show()
 
+def change_fontsize(fsize):
+    globals()['FONTSIZE'] = fsize
+    matplotlib.rcParams.update({'font.size': fsize})
+
 #----- GRAPHS
-def hair(samples,param, y_label='Parameter', savename=''):
-    """Plots an evolution graph of the parameter of"""
-    # samples: sample_inter output from the simulation
-    # Param:  <param>_inter output from the simulation
-
-    fh = plt.figure()
-    ax = plt.axes()
-    for slist, plist in zip(samples,param):
-        ax.plot(np.array(slist),np.array(plist), 'k-')
-
-    xmin = 0
-    xmax = max([x[-1] for x in samples])
-    ymin, ymax = ax.get_ylim()
-    tmp = ymax-ymin
-    ymin, ymax = (ymin-0.05*tmp, ymax+0.05*tmp)
-    
-    ax.set_ylim([ymin,ymax])
-    ax.set_xlim([xmin,xmax])
-    ax.set_xlabel('Sample')
-    ax.set_ylabel(y_label)
-
-    save(savename)
-    return fh
-
-def post_sim_graphs(simwrap):
+def post_sim_graphs(simwrap, save_TO='lastTO', save_CFO='lastCFO'):
     """Graphs to output at the end of a simulation"""
+
+    def hair(samples,param, y_label='Parameter', savename=''):
+        """Plots an evolution graph of the parameter of"""
+        # samples: sample_inter output from the simulation
+        # Param:  <param>_inter output from the simulation
+
+        fh = plt.figure()
+        ax = plt.axes()
+        for slist, plist in zip(samples,param):
+            x = np.array(slist)/simwrap.ctrl.basephi
+            y = np.array(plist)/simwrap.ctrl.basephi
+            ax.plot(x,y, 'k-')
+
+        xmin, xmax = ax.get_xlim()
+        ymin, ymax = ax.get_ylim()
+        tmp = ymax-ymin
+        ymin, ymax = (ymin-0.05*tmp, ymax+0.05*tmp)
+
+        ax.set_ylim([ymin,ymax])
+        #ax.set_xlim([xmin,xmax])
+        ax.set_xlabel('Time ($T_0$)')
+        ax.set_ylabel(y_label)
+
+        save(savename)
+        return ax
+
+    
     ctrl = simwrap.ctrl
     # CFO graph
-    hair(ctrl.sample_inter , ctrl.deltaf_inter , y_label='CFO (\Delta\lambda)', savename='lastCFO');
+    ax_CFO = hair(ctrl.sample_inter , ctrl.deltaf_inter , y_label='CFO (\Delta\lambda)', savename=save_CFO);
     if simwrap.show_CFO: show()
     else: plt.close(plt.gcf())
 
     # TO graphs
-    hair(ctrl.sample_inter, ctrl.theta_inter , y_label='TO', savename='lastTO'); 
+    ax_TO = hair(ctrl.sample_inter, ctrl.theta_inter , y_label=r'$\theta_j$ $(T_0)$', savename=save_TO); 
     if simwrap.show_TO: show()
+    return ax_TO, ax_CFO
 
 def barywidth(*args, axes=None, savename='', fit_type='order2', residuals=True, disp=True, **kwargs):
     """Accepts either a SyncParams() object or two iterables representing the CFO and the barywidth"""
@@ -513,21 +521,47 @@ def all_graphs(p,ctrl=None):
     cat_graphs(glist)
 
 #----- SIMBD GRAPHS
-def scatter_range(dates, collist, axes=None, savename=''):
+def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best'):
     """Scatterplot of the collist of the dates range given."""
     if len(collist) != 2:
         raise ValueError("Expected two entries in collist")
 
-    tmp = sorted(dates)
-    data = np.array(db.fetch_range(tmp, collist))
+    # Fetch prep data fetching
+    sorted_dates = sorted(dates)
+    if multiplot:
+        all_labels = db.fetch_range(sorted_dates, [multiplot])
+        labels = []
+        [labels.append(k) for k in all_labels if k not in labels]
 
-    x, y, ystd = lib.avg_copies(data)
-    sname = GRAPHDUMP_OUTPUT_LOCATION + '-'.join(collist) +\
-            '_' + '-'.join([lib.base62_encode(x) for x in tmp])
+    else:
+        labels = ['']
+
+    datalist = []
+    alldates = db.fetch_range(sorted_dates, ['date'])
+    fetch_dict = {'date':alldates}
+    for label in labels:
+        if multiplot:
+            fetch_dict[multiplot] = ["'" + label +"'"]
+        raw_data = np.array(db.fetch_matching(fetch_dict, collist))
+        datalist.append(raw_data)
 
 
-    ax = scatter(x, y, ystd, collist[0], collist[1])
+    # Plot all that juicy data
 
+    mark = list('.xov^<>12348sp*hH+,Dd|_')
+
+
+
+    for data, label in zip(datalist, labels):
+        x, y, ystd = lib.avg_copies(data)
+        ax = scatter(x, y, ystd, collist[0], collist[1], label=label, fmt='.', marker=mark.pop(0))
+    if multiplot:
+        ax.legend(loc=legendloc)
+        handles, labels = ax.get_legend_handles_labels()
+        handles = [h[0] for h in handles]
+        ax.legend(handles, labels, loc=legendloc, numpoints=1)
+
+    # adjust the lims
     xmin = max(x)
     xmax = min(x)
     ymin, ymax = ax.get_ylim()
@@ -535,9 +569,14 @@ def scatter_range(dates, collist, axes=None, savename=''):
     ymin, ymax = (ymin-0.05*tmpy, ymax+0.05*tmpy)
     tmpx = xmax-xmin
     xmin, xmax = (xmin-0.05*tmpx, xmax+0.05*tmpx)
-    
     ax.set_ylim([ymin,ymax])
     ax.set_xlim([xmin,xmax])
+
+    # Save shit
+    cols_savename = collist + [multiplot] if multiplot else collist
+    sname = GRAPHDUMP_OUTPUT_LOCATION + '-'.join(cols_savename) +\
+            '_' + '-'.join([lib.base62_encode(x) for x in sorted_dates])
+    save(sname)
 
     return ax
 

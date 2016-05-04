@@ -140,17 +140,17 @@ def dec_wrap2():
 
 
     ctrl = SimControls()
-    ctrl.steps = 80 # Approx number of emissions per node
+    ctrl.steps = 65 # Approx number of emissions per node
     ctrl.basephi = 6000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = False # Needed to draw graphs
-    ctrl.nodecount = 15 # Number of nodes
+    ctrl.nodecount = 80 # Number of nodes
     ctrl.static_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
     ctrl.TO_step_wait = 4
-    ctrl.max_start_delay = 30 # In factor of basephi
+    ctrl.max_start_delay = 25 # In factor of basephi
 
-    ctrl.theta_bounds = [0.3,0.7] # In units of phi
+    #ctrl.theta_bounds = [0.3,0.7] # In units of phi
     #ctrl.theta_bounds = [0.48,0.52] # In units of phi
     #ctrl.theta_bounds = [0.5,0.5] # In units of phi
     ctrl.theta_bounds = [0,1] # In units of phi
@@ -163,9 +163,9 @@ def dec_wrap2():
     ctrl.noise_power = -101 + 9 # in dbm
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_exp)
-    ctrl.delay_params.taps = 4
+    ctrl.delay_params.taps = 5
     ctrl.delay_params.max_dist_from_origin = 250 # (in meters)
-    ctrl.delay_params.p_sigma = 0.02 # Paths sigma
+    ctrl.delay_params.p_sigma = 40 # Paths sigma
 
     ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
@@ -181,29 +181,22 @@ def dec_wrap2():
     ctrl.vw_hifactor = 2 # winlen increase factor
     
 
-    ctrl.prop_correction = False
+    ctrl.prop_correction = True
     ctrl.pc_step_wait = 0
-    #ctrl.pc_b, ctrl.pc_a = lib.hipass_filter4(11, pi/1000, 0.5)
-    #ctrl.pc_b, ctrl.pc_a = lib.hipass_semicirc_zeros(11, pi/4, 0.1)
-    #ctrl.pc_b, ctrl.pc_a = lib.hipass_filter4(11, pi/4, 1)
-    #ctrl.pc_b, ctrl.pc_a = lib.hipass_remez(20)
-    #ctrl.pc_b, ctrl.pc_a = lib.hipass_butter(8)
-    #ctrl.pc_b, ctrl.pc_a = lib.hipass_cheby(8)
-    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(15)
+    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(10)
     ctrl.pc_avg_thresh = float('inf') # If std of N previous TOx samples is above this value, then\
-    ctrl.pc_std_thresh = float(50) # If std of N previous TOx samples is above this value, then\
+    ctrl.pc_std_thresh = float(30) # If std of N previous TOx samples is above this value, then\
                      # no PC is applied (but TOy is still calculated)
     
     ctrl.saveall = True
 
 
     cdict = {
-        'nodecount':[x for x in range(10,121,10)]
-        #'nodecount':[x for x in range(3,8)]
+        'nodecount':[x for x in range(10,20,1)]*3
         }
 
-    pdict = {}
-    #pdict = {'match_decimate_fct':[lib.md_clkphase, lib.md_energy]}
+    #pdict = {}
+    pdict = {'match_decimate_fct':[lib.md_clkphase]*3 + [lib.md_energy]*3 + [lib.md_static]*3}
 
     return ctrl, p, cdict, pdict
 
@@ -211,6 +204,8 @@ def dec_wrap2():
 def main_thesis():
 
 
+
+    
     ctrl, p, cdict, pdict = dec_wrap1()
     sim = SimWrap(ctrl, p, cdict, pdict)
 
@@ -231,6 +226,7 @@ def main_thesis():
 
     # Figures and output names!
     thygraphs.zero_padded_crosscorr(); exit()
+    thygraphs.highlited_regimes(); exit()
 
 def main_interd():
 
@@ -243,30 +239,32 @@ def main_interd():
     #graphs.freq_response(ctrl.pc_b, ctrl.pc_a); graphs.show(); exit()
     #graphs.delay_pdf(ctrl); graphs.show(); exit()
     #graphs.delay_grid(ctrl); graphs.show(); exit()
-    #sim.ctrl.keep_intermediate_values = True
-    #sim.show_CFO = False
-    #sim.simulate()
-    #sim.eval_convergence()
-    #sim.post_sim_plots()
-    #exit()
+    sim.ctrl.keep_intermediate_values = True
+    sim.show_CFO = False
+    sim.simulate()
+    sim.post_sim_plots()
+    exit()
+
 
     sim.set_all_nodisp()
     sim.ctrl.keep_intermediate_values = True
     sim.make_plots = False
-    sim.repeat = 10
+    sim.repeat = 1
     sim.ctrl.rand_init = True
 
 
 
 
-    simstr = 'one'
+    simstr = 'all'
     tsims = sim.total_sims(simstr)
     dates = sim.simmany(simstr); #dates = [dates[0], dates[-1]]
-    #dates = [20160316135854599,  20160316135906136]
+    #dates = [20160503210332865 to 20160503210339338
 
     dates = db.fetch_last_n_dates(tsims); dates = [dates[0], dates[-1]]
-    collist = ['nodecount', 'good_link_ratio']
-    graphs.scatter_range(dates, collist)
+    graphs.change_fontsize(14)
+    graphs.scatter_range(dates, ['nodecount', 'good_link_ratio'], multiplot='match_decimate_fct')
+    graphs.show()
+    graphs.scatter_range(dates, ['nodecount', 'theta_ssstd'], multiplot='match_decimate_fct')
     graphs.show()
 
     exit()
@@ -440,13 +438,12 @@ class SimWrap(lib.Struct):
                 msg += "%2.2f"%(count*100/tsims) + "% done"
                 oprint(msg)
                 count += 1
-                print(self.ctrl.nodecount)
                 self.simulate()
         oprint(' '*len(msg))
         print('Done simmany in ' + "%2.2f"%(tf()-t0) + ' seconds.')
 
         # Logging the dateid set
-        dates = np.array(db.fetch_last_n(tsims, ['date'], dateid=False)).flatten()
+        dates = np.array(db.fetch_last_n_dates(tsims)).flatten()
         lib.appendlog('Done ' + str(tsims) + ' simulations: ' +\
                       str(dates[-1]) + ' to ' + str(dates[0]))
 
@@ -458,6 +455,7 @@ class SimWrap(lib.Struct):
 
         Note: Shorter lists are deleted when done. THe concerned variable will keep that final value
         for future iteration"""
+
         while self.cdict or self.pdict:
             for d, obj in zip([self.cdict, self.pdict], [self.ctrl, self.p]):
                 todel = []
@@ -476,8 +474,8 @@ class SimWrap(lib.Struct):
         yield False # When both dicts are empty,  return false.
 
     def assign_next_one(self):
-        """Makes a generator of both ctrl and p. It iterates through cdict and pdict over all
-        lists at the same time
+        """Makes a generator of both ctrl and p. It iterates through cdict and pdict
+        one item at a time
 
         Note: Shorter lists are deleted when done. THe concerned variable will keep that final value
         for future iteration"""
@@ -498,9 +496,9 @@ class SimWrap(lib.Struct):
 
         yield False # When both dicts are empty,  return false.
 
-    def post_sim_plots(self):
+    def post_sim_plots(self, **kwargs):
         """Wrapper for the plotlib fct"""
-        graphs.post_sim_graphs(self)
+        return graphs.post_sim_graphs(self, **kwargs)
 
     def total_sims(self, assign_method='all'):
         """Returns the total number of simulations that will be executed based on the # of elements in cdict/pdict"""

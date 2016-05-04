@@ -265,7 +265,7 @@ def runsim(p,ctrl):
     ####################
 
     if ctrl.display:
-        print('Theta std init: ' + str(np.std(theta)))
+        print('Theta std init: ' + str(np.std(lib.minimize_distance(theta, basephi))))
         #print('deltaf std init: ' + str(np.std(deltaf)) + '    spread: '+ str(max(deltaf) -min(deltaf))+ '\n')
 
 
@@ -292,7 +292,11 @@ def runsim(p,ctrl):
 
 
 
-
+    # Make first two nodes broadcast faster
+    #wait_emit[queue_clk[0]] = ctrl.TO_step_wait
+    #wait_emit[queue_clk[1]] = ctrl.TO_step_wait
+    #next_event[queue_clk[0]] = 'emit'
+    #next_event[queue_clk[1]] = 'emit'
 
 
     # Main loop
@@ -421,8 +425,7 @@ def runsim(p,ctrl):
                 
 
                 # Only do if near a steady state
-                #if np.mean(prev_TOx) < ctrl.pc_avg_thresh:
-                #    TO = TOy
+                #print(np.std(prev_TOx))
                 if np.std(prev_TOx) < ctrl.pc_std_thresh:
                     TO = TOy
                 
@@ -523,7 +526,7 @@ def runsim(p,ctrl):
 
 
     if ctrl.display:
-        print('theta STD: ' + str(np.std(theta)))
+        print('theta STD: ' + str(np.std(lib.minimize_distance(theta, basephi))))
         #print('deltaf STD: ' + str(np.std(deltaf)) + '    spread: ' + str(max(deltaf)-min(deltaf)))
 
 

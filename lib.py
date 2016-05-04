@@ -149,7 +149,7 @@ def rrcosfilter(N, a, T, f, dtype=CPLX_DTYPE, frac_TO=0):
     
     warnings.filterwarnings("always")
     return time,h
-#--------------------
+
 #---------------------------
 def calc_snr(ctrl,p):
     """Calculates the SNR of the system provided"""
@@ -180,6 +180,28 @@ def db2amp(db):
 def db2pwr(db):
     """Converts db to power """
     return 10**(0.1*db)
+
+def minimize_distance(array, period):
+    """Rotates the array values around the period, such that the distance between the array values is mimized"""
+    out = array.copy()
+    N = len(out)
+    sidx = collections.deque(np.argsort(out)) # Sorted indexes
+
+    lo,hi = (sidx[0], sidx[-1])
+    direct = lambda : np.abs(out[hi] - out).sum()
+    shifted = lambda : np.abs(out - out[hi] + period).sum()
+
+    k = 0
+    while direct() > shifted() and k < N:
+        out[sidx[-1]] -= period
+        sidx.rotate(1)
+        hi = sidx[-1]
+        k += 1
+        #print(np.std(out)) # Debug mode
+
+    if k==N: warnings.warn('Rotated the input N times')
+
+    return out
 
 def in_place_mov_avg(vector, wlims):
     """Runs an in-place moving average on the input vector."""
@@ -464,6 +486,8 @@ def barycenter_correlation(f,g, peak_detect='wavg', power_weight=2, bias_thresh=
         maxval = np.max(cross_correlation)
         bias = maxval*bias_thresh
         cross_correlation[cross_correlation < bias] = 0
+    
+
 
 
     # in-place MA filter on the cross correlation
@@ -818,7 +842,7 @@ def symmetrify(arr):
 #--------------------
 def hipass_avg(N):
     """filter0: regular average"""
-    b = np.array([1] + list(-1*np.ones(N)/N))
+    b = np.array([(N-1)/N] + list(-1*np.ones(N-1)/N))
     a = np.array([1])
     return b,a
 

@@ -112,7 +112,7 @@ def convert_float64(number):
     return np.float64(number)
 
 def convert_function(text):
-    return str(text)
+    return text.decode("utf-8")
 
 def convert_delayparams(text):
     return str(text)
@@ -335,7 +335,7 @@ def fetch_collist(tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
 
     return dbcols
 
-def fetch_matching(entry_dict, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False, get_data=True):
+def fetch_matching(entry_dict, collist=None, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False, get_data=True):
     """Fetches the rows that matches the entry dict.
     If get_data = False, then it only outputs the dates (not the full row): """
 
@@ -346,19 +346,35 @@ def fetch_matching(entry_dict, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False, get_
 
     c = conn.cursor()
 
+    # Determine coluns to get
+    if collist is None:
+        colstring = '*'
+    elif len(collist)==1:
+        colstring = collist[0]
+    else:
+        colstring = ','.join(collist)
+
+    # Build query string
     if get_data:
-        string = "SELECT * FROM " + tn + " WHERE " 
+        string = "SELECT " + colstring + " FROM " + tn + " WHERE " 
     else:
         string = "SELECT date FROM " + tn + " WHERE " 
 
+
+
     # Build the execute string and data list
     data_list = []
-    for key, val in entry_dict.items():
-        string += key + " = ? AND "
-        data_list.append(val)
+    string += "("
+    for key, val in list(entry_dict.items()):
+        if len(val)==1:
+            string += key + " in (" + str(val[0]) + ")"
+        else:
+            string += key + " in " + str(tuple(val)) + ""
+        string += " AND "
     string = string[:-5]
+    string += ")"
 
-    cursor = c.execute(string, data_list)
+    cursor = c.execute(string)
 
     
     if close_conn:
@@ -380,8 +396,11 @@ def fetch_range(dates, collist , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
 
     if collist is None:
         colstring = '*'
+    elif len(collist)==1:
+        colstring = collist[0]
     else:
         colstring = ','.join(collist)
+
 
     if len(dates) != 2:
         raise ValueError('Expected the first argument to be an iterable of length 2')
@@ -396,6 +415,9 @@ def fetch_range(dates, collist , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
     
     if close_conn:
         conn.close()
+
+    if len(output[0])==1:
+        output = [x[0] for x in output]
 
     return output
 
