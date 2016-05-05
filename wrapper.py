@@ -230,6 +230,8 @@ def main_thesis():
 
 def main_interd():
 
+    #thygraphs.highlited_regimes(); exit()
+    thygraphs.zero_padded_crosscorr(); exit()
 
     ctrl, p, cdict, pdict = dec_wrap2()
     sim = SimWrap(ctrl, p, cdict, pdict)

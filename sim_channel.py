@@ -293,10 +293,10 @@ def runsim(p,ctrl):
 
 
     # Make first two nodes broadcast faster
-    #wait_emit[queue_clk[0]] = ctrl.TO_step_wait
-    #wait_emit[queue_clk[1]] = ctrl.TO_step_wait
-    #next_event[queue_clk[0]] = 'emit'
-    #next_event[queue_clk[1]] = 'emit'
+    wait_emit[queue_clk[0]] = ctrl.TO_step_wait
+    wait_emit[queue_clk[1]] = ctrl.TO_step_wait
+    next_event[queue_clk[0]] = 'emit'
+    next_event[queue_clk[1]] = 'emit'
 
 
     # Main loop

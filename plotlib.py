@@ -120,9 +120,9 @@ def surface3d(x,y,z, density=20, **kwargs):
 
 def save(name, **kwargs):
     """Saves the current figure to """
-    if save != '':
+    if name:
         fname = GRAPH_OUTPUT_LOCATION + name + '.' + GRAPH_OUTPUT_FORMAT
-        plt.savefig(fname, bbox_inches='tight', format=GRAPH_OUTPUT_FORMAT)
+        plt.savefig(fname , bbox_inches='tight', format=GRAPH_OUTPUT_FORMAT)
 
 def show():
     plt.show()
@@ -168,7 +168,7 @@ def post_sim_graphs(simwrap, save_TO='lastTO', save_CFO='lastCFO'):
     else: plt.close(plt.gcf())
 
     # TO graphs
-    ax_TO = hair(ctrl.sample_inter, ctrl.theta_inter , y_label=r'$\theta_j$ $(T_0)$', savename=save_TO); 
+    ax_TO = hair(ctrl.sample_inter, ctrl.theta_inter , y_label=r'$\theta_i$ $(T_0)$', savename=save_TO); 
     if simwrap.show_TO: show()
     return ax_TO, ax_CFO
 

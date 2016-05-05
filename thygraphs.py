@@ -324,6 +324,7 @@ def highlited_regimes():
     #graphs.show()
     fname = 'latex_figures/highlighted_regimes'
     graphs.save(fname)
+    graphs.show()
 
 
 
