@@ -10,6 +10,7 @@ import warnings
 import inspect
 import time
 import thygraphs
+import math
 
 from numpy import pi
 
@@ -129,7 +130,7 @@ def dec_wrap2():
 
     p.power_weight = 2
     p.full_sim = True
-    p.bias_removal = True
+    p.bias_removal = False
     p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
     p.train_type = 'single' # Type of training sequence
     p.crosscorr_type = 'match_decimate' 
@@ -144,7 +145,7 @@ def dec_wrap2():
     ctrl.basephi = 6000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = False # Needed to draw graphs
-    ctrl.nodecount = 80 # Number of nodes
+    ctrl.nodecount = 12 # Number of nodes
     ctrl.static_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
     ctrl.TO_step_wait = 4
@@ -183,20 +184,24 @@ def dec_wrap2():
 
     ctrl.prop_correction = True
     ctrl.pc_step_wait = 0
-    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(10)
+    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(7)
     ctrl.pc_avg_thresh = float('inf') # If std of N previous TOx samples is above this value, then\
-    ctrl.pc_std_thresh = float(30) # If std of N previous TOx samples is above this value, then\
+    ctrl.pc_std_thresh = float(40) # If std of N previous TOx samples is above this value, then\
                      # no PC is applied (but TOy is still calculated)
     
     ctrl.saveall = True
 
 
+    ncount_lo = 15
+    ncount_hi = 81
+    step = 5
+    ntot = math.floor((ncount_hi - ncount_lo - 1)/abs(step))
     cdict = {
-        'nodecount':[x for x in range(10,20,1)]*3
+        'nodecount':[x for x in range(ncount_lo, ncount_hi,step)]*3
         }
 
     #pdict = {}
-    pdict = {'match_decimate_fct':[lib.md_clkphase]*3 + [lib.md_energy]*3 + [lib.md_static]*3}
+    pdict = {'match_decimate_fct':[lib.md_clkphase]*ntot+[lib.md_energy]*ntot+[lib.md_static]*ntot}
 
     return ctrl, p, cdict, pdict
 
@@ -231,7 +236,7 @@ def main_thesis():
 def main_interd():
 
     #thygraphs.highlited_regimes(); exit()
-    thygraphs.zero_padded_crosscorr(); exit()
+    #thygraphs.zero_padded_crosscorr(); exit()
 
     ctrl, p, cdict, pdict = dec_wrap2()
     sim = SimWrap(ctrl, p, cdict, pdict)
@@ -241,17 +246,17 @@ def main_interd():
     #graphs.freq_response(ctrl.pc_b, ctrl.pc_a); graphs.show(); exit()
     #graphs.delay_pdf(ctrl); graphs.show(); exit()
     #graphs.delay_grid(ctrl); graphs.show(); exit()
-    sim.ctrl.keep_intermediate_values = True
-    sim.show_CFO = False
-    sim.simulate()
-    sim.post_sim_plots()
-    exit()
+    #sim.ctrl.keep_intermediate_values = True
+    #sim.show_CFO = False
+    #sim.simulate()
+    #sim.post_sim_plots()
+    #exit()
 
 
     sim.set_all_nodisp()
     sim.ctrl.keep_intermediate_values = True
     sim.make_plots = False
-    sim.repeat = 1
+    sim.repeat = 14
     sim.ctrl.rand_init = True
 
 
@@ -261,10 +266,11 @@ def main_interd():
     tsims = sim.total_sims(simstr)
     dates = sim.simmany(simstr); #dates = [dates[0], dates[-1]]
     #dates = [20160503210332865 to 20160503210339338
+    #dates = [20160507165437730, 20160507215153861]
 
-    dates = db.fetch_last_n_dates(tsims); dates = [dates[0], dates[-1]]
+    #dates = db.fetch_last_n_dates(tsims); dates = [dates[0], dates[-1]]
     graphs.change_fontsize(14)
-    graphs.scatter_range(dates, ['nodecount', 'good_link_ratio'], multiplot='match_decimate_fct')
+    graphs.scatter_range(dates, ['nodecount', 'good_link_ratio'], multiplot='match_decimate_fct', show_std=False)
     graphs.show()
     graphs.scatter_range(dates, ['nodecount', 'theta_ssstd'], multiplot='match_decimate_fct')
     graphs.show()
@@ -436,11 +442,12 @@ class SimWrap(lib.Struct):
         # Main loop
         while next(assign_fct()):
             for k in range(self.repeat):
-                msg = "Iteration " + str(count).zfill(len(str(tsims))) + " of " + str(tsims) + '. ' 
-                msg += "%2.2f"%(count*100/tsims) + "% done"
+                avg_time = (tf()-t0)/count if count!=0 else 0
+                msg = "Iteration " + str(count).zfill(len(str(tsims))) + " of " + str(tsims)+ '. ' 
+                msg += "%2.2f"%(count*100/tsims) + "% done -- avg time:" +  "%2.2f"%avg_time + ' sec/iteration'
                 oprint(msg)
-                count += 1
                 self.simulate()
+                count += 1
         oprint(' '*len(msg))
         print('Done simmany in ' + "%2.2f"%(tf()-t0) + ' seconds.')
 

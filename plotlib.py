@@ -91,7 +91,7 @@ def continuous(*args, label='curve0', axes=None):
 
     return ax
 
-def scatter(x, y, yerr, x_label='', y_label='',axes=None, savename='', **kwargs):
+def scatter(x, y, yerr, x_label='', y_label='',axes=None, savename='',show_std=True, **kwargs):
     """Scatter plot, with errorbars if specified"""
 
     if axes == None:
@@ -99,7 +99,7 @@ def scatter(x, y, yerr, x_label='', y_label='',axes=None, savename='', **kwargs)
     else:
         ax = axes
 
-    lh = ax.errorbar(x, y, yerr, capsize=0, **kwargs )
+    lh = ax.errorbar(x, y, yerr, capsize=None, **kwargs )
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
 
@@ -521,7 +521,7 @@ def all_graphs(p,ctrl=None):
     cat_graphs(glist)
 
 #----- SIMBD GRAPHS
-def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best'):
+def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best', **kwargs):
     """Scatterplot of the collist of the dates range given."""
     if len(collist) != 2:
         raise ValueError("Expected two entries in collist")
@@ -550,11 +550,9 @@ def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best'):
 
     mark = list('.xov^<>12348sp*hH+,Dd|_')
 
-
-
     for data, label in zip(datalist, labels):
         x, y, ystd = lib.avg_copies(data)
-        ax = scatter(x, y, ystd, collist[0], collist[1], label=label, fmt='.', marker=mark.pop(0))
+        ax = scatter(x, y, ystd, collist[0], collist[1], label=label, fmt='.', marker=mark.pop(0), **kwargs)
     if multiplot:
         ax.legend(loc=legendloc)
         handles, labels = ax.get_legend_handles_labels()
