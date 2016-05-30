@@ -141,15 +141,15 @@ def dec_wrap2():
 
 
     ctrl = SimControls()
-    ctrl.steps = 65 # Approx number of emissions per node
+    ctrl.steps = 5 # Approx number of emissions per node
     ctrl.basephi = 6000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = False # Needed to draw graphs
     ctrl.nodecount = 12 # Number of nodes
     ctrl.static_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
-    ctrl.TO_step_wait = 4
-    ctrl.max_start_delay = 25 # In factor of basephi
+    ctrl.TO_step_wait = 0
+    ctrl.max_start_delay = 0 # In factor of basephi
 
     #ctrl.theta_bounds = [0.3,0.7] # In units of phi
     #ctrl.theta_bounds = [0.48,0.52] # In units of phi
@@ -237,6 +237,13 @@ def main_interd():
 
     #thygraphs.highlited_regimes(); exit()
     #thygraphs.zero_padded_crosscorr(); exit()
+    N = 500
+    data = np.random.normal(size=(3,N))
+    data[2,:] = np.random.random(size=N)
+
+    x, y = lib.build_cdf(data[2,:])
+    graphs.continuous(x, y); graphs.show()
+    exit()
 
     ctrl, p, cdict, pdict = dec_wrap2()
     sim = SimWrap(ctrl, p, cdict, pdict)
@@ -264,9 +271,11 @@ def main_interd():
 
     simstr = 'all'
     tsims = sim.total_sims(simstr)
-    dates = sim.simmany(simstr); #dates = [dates[0], dates[-1]]
+    #dates = sim.simmany(simstr); #dates = [dates[0], dates[-1]]
     #dates = [20160503210332865 to 20160503210339338
     #dates = [20160507165437730, 20160507215153861]
+    dates = [20160507165437730, 20160508114538466]
+ 
 
     #dates = db.fetch_last_n_dates(tsims); dates = [dates[0], dates[-1]]
     graphs.change_fontsize(14)
@@ -560,15 +569,17 @@ class SimWrap(lib.Struct):
 
         # Evaluate communication capabilites between all nodes 
         theta = self.ctrl.theta
+        N = theta.shape[0]
         prop_delay_grid = self.ctrl.delay_params.delay_grid
-        offset_grid = np.tile(theta.reshape(-1,1), theta.shape[0])
+        offset_grid = np.tile(theta.reshape(-1,1), N)
         offset_grid +=  -1*offset_grid.T
         offset_grid +=  -1*prop_delay_grid
-        offsets = offset_grid[~np.eye(offset_grid.shape[0], dtype=bool)]
-        linkcount = len(offsets)
+        offset_l = offset_grid[np.tril_indices(offset_grid.shape[0],k=-1)]
+        offset_u = offset_grid[np.triu_indices(offset_grid.shape[0],k=1)]
+        linkcount =  (N**2 - N)
 
         lo, hi = [k*1e-6*self.p.f_samp for k in self.conv_offset_limits]
-        good_links = ((offsets>lo) & (offsets<hi)).sum()
+        good_links = ((offset_grid>lo) & (offset_grid<hi)).sum() - N
 
         output['good_link_ratio'] = good_links/linkcount
 

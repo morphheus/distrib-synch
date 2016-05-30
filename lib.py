@@ -977,6 +977,13 @@ def dist2samples(d, f_samp, unit='m'):
     """Converts samples to a distance unit (kilometers or meters)"""
     return d/samples2dist(1,f_samp, unit=unit)
 
+#---------------------
+def build_cdf(data):
+    """Builds a CDF of the provided data. The function sorts the data array on the last axis and returns appropriate CDF values"""
+    N = data.shape[-1]
+    x = np.sort(data.reshape(-1), axis=(len(data.shape)-1))
+    y = np.arange(N)/N
+    return x, y
 
 ##########################
 # CLASSDEFS
@@ -1064,7 +1071,7 @@ class SyncParams(Struct):
     """Parameter struct containing all the parameters used for the simulation, from the generation of the modulated training sequence to the exponent of the cross-correlation"""
 
     def __init__(self):
-        self.plen = 101 # Note: must be odd
+        self.add(plen=101) # Note: must be odd
         self.rolloff = 0.1
         self.CFO = 0
         self.TO = 0 # Must be an integer
