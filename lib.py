@@ -150,6 +150,27 @@ def rrcosfilter(N, a, T, f, dtype=CPLX_DTYPE, frac_TO=0):
     warnings.filterwarnings("always")
     return time,h
 
+def scfdma_filter(seq, M, offset):
+    """Applies an SC-FDMA modulation"""
+    
+    N = len(seq)
+    if offset + N > M:
+        raise ValueError('Offset too high. Max allowed value is M-N')
+
+    S = np.fft.fft(seq)
+    C = np.concatenate((np.zeros(offset), S, np.zeros(M-offset)))
+    return np.fft.ifft(C)
+
+def scfdma_sinc(N, L):
+    """Returns the interpolating pulse for SCFDMA with the appropriate parameter"""
+    xmax = 1*L*N
+    xmin = -1*xmax
+    x = np.arange(xmin, xmax+1)
+    x[xmax] = 1
+    out = np.sin(pi*x/L)/np.sin(pi*x/(L*N))
+    out[xmax] = L*N
+    return out
+
 #---------------------------
 def calc_snr(ctrl,p):
     """Calculates the SNR of the system provided"""
@@ -439,11 +460,14 @@ def calc_both_barycenters(p,chan, mode='valid' , md_start_idx=0):
     it uses analog_sig instead"""
 
     barycorr_kwargs ={'power_weight':p.power_weight, 'bias_thresh':p.bias_removal, 'mode':mode, 'ma_window':p.ma_window, 'peak_detect':p.peak_detect}
+
+    corr_spacing = 1
     
     if p.crosscorr_type == 'match_decimate':
-        g, start_index, _ = p.match_decimate_fct(chan, p.pulse, p.spacing, md_start_idx)
+        g, start_index = p.match_decimate_fct(chan, p.pulse, p.spacing, md_start_idx)
         f1 = p.zpos
         f2 = p.zpos.conj()
+        corr_spacing *= p.spacing
     elif p.crosscorr_type == 'zeropadded':
         f1 = p.pad_zpos
         f2 = p.pad_zneg
@@ -454,6 +478,12 @@ def calc_both_barycenters(p,chan, mode='valid' , md_start_idx=0):
         g = chan
     else:
         raise Exception('Invalid p.crosscorr_fct string')
+
+    
+    if p.scfdma_precode:
+        g, _ = md_static(g, p.scfdma_pulse, p.scfdma_L)
+        corr_spacing *= p.scfdma_L
+        pass
     
     # Apply the cross-correlations
     barypos, crosscorrpos = barycenter_correlation(f1 , g, **barycorr_kwargs) 
@@ -464,8 +494,8 @@ def calc_both_barycenters(p,chan, mode='valid' , md_start_idx=0):
         crosscorrneg = crosscorrpos
 
         
-    if p.crosscorr_type == 'match_decimate':
-        barypos, baryneg = [start_index + p.spacing*k for k in [barypos, baryneg]]
+    if corr_spacing > 1:
+        barypos, baryneg = [start_index + corr_spacing*k for k in [barypos, baryneg]]
 
     return barypos, baryneg, crosscorrpos, crosscorrneg
 
@@ -536,7 +566,7 @@ def md_energy(signal, pulse, spacing, expected_start_index=0, mode='same'):
 
     decimated = cross_correlation[decimated_start_index::spacing]
     
-    return decimated, decimated_start_index,  cross_correlation
+    return decimated, decimated_start_index
 
 def md_static(signal, pulse, spacing, expected_start_index=0, mode='same'):
     """Cross-correlates the signal with the shaping pulse
@@ -550,7 +580,7 @@ def md_static(signal, pulse, spacing, expected_start_index=0, mode='same'):
     abs_crosscorr = np.abs(cross_correlation)
     decimated = cross_correlation[expected_start_index::spacing]
     
-    return decimated, expected_start_index,  cross_correlation
+    return decimated, expected_start_index
 
 def md_clkphase(signal, pulse, spacing, expected_start_index=0, mode='same'):
     """Cross-correlates the signal with the shaping pulse
@@ -567,7 +597,11 @@ def md_clkphase(signal, pulse, spacing, expected_start_index=0, mode='same'):
     #decimated = cross_correlation[::-1][0::spacing][::-1]
     decimated = cross_correlation[start_index::spacing]
     
-    return decimated, start_index,  cross_correlation
+    return decimated, start_index
+
+def downsample(signal, pulse, spacing, expected_start_index=0, mode='same'):
+    """Simply downsamples the input signal"""
+    return signal[expected_start_index::spacing], expected_start_index
 
 #--------------------
 def cfo_mapper_pass(barywidth, p):
@@ -1192,6 +1226,12 @@ class SyncParams(Struct):
 
     def build_analog_sig(self):
         """Pulses-shapes the training sequence. Must run build_pulse and build_training_sequence first"""
+        if self.scfdma_precode:
+            offset = 0
+            tmp = len(self.training_seq)
+            self.training_seq = scfdma_filter(self.training_seq, self.scfdma_M, offset )
+            self.scfdma_pulse = scfdma_sinc(tmp, self.scfdma_L)
+
         T = 1/self.f_samp
         analog_sig = d_to_a(self.training_seq, self.pulse, self.spacing)
         analog_zpos = d_to_a(self.zpos, self.pulse, self.spacing)

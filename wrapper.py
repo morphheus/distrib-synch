@@ -117,16 +117,14 @@ def dec_wrap1():
 def dec_wrap2():
     """Single ZC sequence with Decimation"""
     p = lib.SyncParams()
-    p.zc_len = 73
-    p.plen = 61
+    p.zc_len = 32
+    p.plen = 31
 
     p.rolloff = 0.2
-    #p.f_samp = 4e6
-    #p.f_symb = 1e6
     p.f_symb = 30.72e6
-    p.f_samp = p.f_symb*8
+    p.f_samp = p.f_symb*4
     p.repeat = 1
-    p.spacing_factor = 1 # CHANGE TO TWO!
+    p.spacing_factor = 1
 
     p.power_weight = 2
     p.full_sim = True
@@ -134,21 +132,24 @@ def dec_wrap2():
     p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
     p.train_type = 'single' # Type of training sequence
     p.crosscorr_type = 'match_decimate' 
-    p.match_decimate_fct = lib.md_clkphase
+    p.match_decimate_fct = lib.downsample
     p.peak_detect = 'wavg' 
     p.pulse_type = 'rootraisedcosine'
     p.central_padding = 0 # As a fraction of zpos length
+    p.scfdma_precode = True
+    p.scfdma_L = 8
+    p.scfdma_M = p.zc_len*p.scfdma_L
 
 
     ctrl = SimControls()
-    ctrl.steps = 5 # Approx number of emissions per node
+    ctrl.steps = 10 # Approx number of emissions per node
     ctrl.basephi = 6000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = False # Needed to draw graphs
     ctrl.nodecount = 12 # Number of nodes
     ctrl.static_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
-    ctrl.TO_step_wait = 0
+    ctrl.TO_step_wait = 5
     ctrl.max_start_delay = 0 # In factor of basephi
 
     #ctrl.theta_bounds = [0.3,0.7] # In units of phi
@@ -237,13 +238,15 @@ def main_interd():
 
     #thygraphs.highlited_regimes(); exit()
     #thygraphs.zero_padded_crosscorr(); exit()
-    N = 500
-    data = np.random.normal(size=(3,N))
-    data[2,:] = np.random.random(size=N)
+    #N = 500
+    #data = np.random.normal(size=(3,N))
+    #data[2,:] = np.random.random(size=N)
 
-    x, y = lib.build_cdf(data[2,:])
-    graphs.continuous(x, y); graphs.show()
-    exit()
+    #x, y = lib.build_cdf(data[2,:])
+    #graphs.continuous(x, y); graphs.show()
+    #exit()
+
+
 
     ctrl, p, cdict, pdict = dec_wrap2()
     sim = SimWrap(ctrl, p, cdict, pdict)
@@ -253,11 +256,11 @@ def main_interd():
     #graphs.freq_response(ctrl.pc_b, ctrl.pc_a); graphs.show(); exit()
     #graphs.delay_pdf(ctrl); graphs.show(); exit()
     #graphs.delay_grid(ctrl); graphs.show(); exit()
-    #sim.ctrl.keep_intermediate_values = True
-    #sim.show_CFO = False
-    #sim.simulate()
-    #sim.post_sim_plots()
-    #exit()
+    sim.ctrl.keep_intermediate_values = True
+    sim.show_CFO = False
+    sim.simulate()
+    sim.post_sim_plots()
+    exit()
 
 
     sim.set_all_nodisp()
