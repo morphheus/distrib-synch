@@ -421,7 +421,6 @@ def fetch_range(dates, collist , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
 
     return output
 
-
 def fetch_cols(date, collist , tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
     """Fetches the columns in collist"""
     close_conn = False

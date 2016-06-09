@@ -683,6 +683,17 @@ def delay_pdf_exp(t, sigma, t0=0):
 
     return amp
 
+def delay_pdf_lognorm(t, sigma, t0=0):
+    """Exponentially decaying delay PDF""
+    amp = (1/sigma) exp(-(1/sigma)*(t-t0))"""
+    if sigma == 0:
+        amp = 1 if t >= t0 else 0
+    else:
+        l = 1/sigma
+        amp = np.exp(-l*(t - t0)) if t >= t0 else 0
+
+    return amp
+
 def pathloss_freespace(d, f_carr):
     """Free space path loss. Frequencies are expected in MHz, d in meters"""
     return 20*log10(d) + 46.4 + 20*log10(f_carr*1e-9/5)
@@ -1011,13 +1022,60 @@ def dist2samples(d, f_samp, unit='m'):
     """Converts samples to a distance unit (kilometers or meters)"""
     return d/samples2dist(1,f_samp, unit=unit)
 
+def si_prefix(x, prefix):
+    """Applies the SI prefix to the value"""
+    if prefix=='n': fact = 1e-9;
+    if prefix=='mu': fact = 1e-6;
+    if prefix=='m': fact = 1e-3;
+    if prefix=='K': fact = 1e3;
+    if prefix=='M': fact = 1e6;
+    if prefix=='G': fact = 1e9;
+    return x/fact
+
 #---------------------
-def build_cdf(data):
-    """Builds a CDF of the provided data. The function sorts the data array on the last axis and returns appropriate CDF values"""
-    N = data.shape[-1]
-    x = np.sort(data.reshape(-1), axis=(len(data.shape)-1))
-    y = np.arange(N)/N
-    return x, y
+def build_cdf(data, bins=1000):
+    """Builds a CDF of the provided data. The function sorts the data array on the last axis and returns appropriate CDF values
+    pts: Number of datapoints to return"""
+    x = np.sort(data.reshape(-1))
+    N = len(x)
+
+    y, bins = np.histogram(x, bins=bins)
+    y = np.cumsum(y)/N
+    return (bins[1:]+bins[0:-1]/2), y
+
+def empiric_offset_cdf(dates, unit_prefix='mu', bins=1000):
+    """
+    Grab the theta_grids from the dates and outputs the offset cdf
+
+    if div=True, the 
+
+    """
+    datalist = list(db.fetch_matching({'date':dates},  ['theta', 'f_samp']))
+
+    # Remove zeros and turn into seconds
+    arrlist = []
+    for theta, f_samp in datalist:
+        theta_grid = build_diff_grid(theta)
+        tmp = np.abs(theta_grid[np.triu_indices(theta_grid.shape[-1],k=1)])
+        arrlist.append((tmp/f_samp).astype(FLOAT_DTYPE))
+
+    delays = np.concatenate(arrlist).flatten()
+    x, y = build_cdf(delays, bins=bins)
+    return x,y
+
+
+def build_diff_grid(arr):
+    """Builds a matrix of the difference between all entries in arr"""
+    N = len(arr)
+    grid = np.tile(arr.reshape(-1,1), N)
+    grid +=  -1*grid.T
+    return grid
+
+
+
+
+
+
 
 ##########################
 # CLASSDEFS

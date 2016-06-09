@@ -142,14 +142,14 @@ def dec_wrap2():
 
 
     ctrl = SimControls()
-    ctrl.steps = 10 # Approx number of emissions per node
+    ctrl.steps = 20 # Approx number of emissions per node
     ctrl.basephi = 6000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = False # Needed to draw graphs
-    ctrl.nodecount = 12 # Number of nodes
+    ctrl.nodecount = 5 # Number of nodes
     ctrl.static_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
-    ctrl.TO_step_wait = 5
+    ctrl.TO_step_wait = 10
     ctrl.max_start_delay = 0 # In factor of basephi
 
     #ctrl.theta_bounds = [0.3,0.7] # In units of phi
@@ -164,7 +164,7 @@ def dec_wrap2():
     #ctrl.noise_power = float('-inf')
     ctrl.noise_power = -101 + 9 # in dbm
 
-    ctrl.delay_params = lib.DelayParams(lib.delay_pdf_exp)
+    ctrl.delay_params = lib.DelayParams(lib.delay_pdf_lognorm)
     ctrl.delay_params.taps = 5
     ctrl.delay_params.max_dist_from_origin = 250 # (in meters)
     ctrl.delay_params.p_sigma = 40 # Paths sigma
@@ -197,12 +197,13 @@ def dec_wrap2():
     ncount_hi = 81
     step = 5
     ntot = math.floor((ncount_hi - ncount_lo - 1)/abs(step))
-    cdict = {
-        'nodecount':[x for x in range(ncount_lo, ncount_hi,step)]*3
-        }
+    cdict = {'rand_init':[True]}
+    #cdict = {
+    #    'nodecount':[x for x in range(ncount_lo, ncount_hi,step)]*3
+    #    }
 
-    #pdict = {}
-    pdict = {'match_decimate_fct':[lib.md_clkphase]*ntot+[lib.md_energy]*ntot+[lib.md_static]*ntot}
+    pdict = {}
+    #pdict = {'match_decimate_fct':[lib.md_clkphase]*ntot+[lib.md_energy]*ntot+[lib.md_static]*ntot}
 
     return ctrl, p, cdict, pdict
 
@@ -242,7 +243,7 @@ def main_interd():
     #data = np.random.normal(size=(3,N))
     #data[2,:] = np.random.random(size=N)
 
-    #x, y = lib.build_cdf(data[2,:])
+    #x, y = lib.build_cdf(data)
     #graphs.continuous(x, y); graphs.show()
     #exit()
 
@@ -258,6 +259,7 @@ def main_interd():
     #graphs.delay_grid(ctrl); graphs.show(); exit()
     sim.ctrl.keep_intermediate_values = True
     sim.show_CFO = False
+    #sim.set_all_nodisp()
     sim.simulate()
     sim.post_sim_plots()
     exit()
@@ -266,7 +268,7 @@ def main_interd():
     sim.set_all_nodisp()
     sim.ctrl.keep_intermediate_values = True
     sim.make_plots = False
-    sim.repeat = 14
+    sim.repeat = 10
     sim.ctrl.rand_init = True
 
 
@@ -274,32 +276,13 @@ def main_interd():
 
     simstr = 'all'
     tsims = sim.total_sims(simstr)
-    #dates = sim.simmany(simstr); #dates = [dates[0], dates[-1]]
-    #dates = [20160503210332865 to 20160503210339338
-    #dates = [20160507165437730, 20160507215153861]
-    dates = [20160507165437730, 20160508114538466]
+    #dates = sim.simmany(simstr);# dates = [dates[0], dates[-1]]
+    #dates = [20160507165437730, 20160508114538466]
+    dates = db.fetch_last_n_dates(tsims); dates = [dates[0], dates[-1]]
+
+    graphs.time_offset_cdf(dates); graphs.show()
  
 
-    #dates = db.fetch_last_n_dates(tsims); dates = [dates[0], dates[-1]]
-    graphs.change_fontsize(14)
-    graphs.scatter_range(dates, ['nodecount', 'good_link_ratio'], multiplot='match_decimate_fct', show_std=False)
-    graphs.show()
-    graphs.scatter_range(dates, ['nodecount', 'theta_ssstd'], multiplot='match_decimate_fct')
-    graphs.show()
-
-    exit()
-    #db_out = np.array(db.fetch_last_n(tsims, ['nodecount', 'theta_ssstd'], dateid=True))
-    #dates, data = np.split(db_out, [1,], axis=1); dates = dates.astype(int)
-    data = np.array(db.fetch_range([dates[-1], dates[0]], collist))
-
-    x, y, ystd = lib.avg_copies(data)
-    
-    savename = 'graphdump/'
-    savename += 'stuff'
-    #savename += '_' + str(dates[0,0])[4:]
-    savename += '_' + str(dates[0])[4:]
-    graphs.scatter(x, y, ystd, 'nodecount', 'theta_std (samples)', savename=savename)
-    graphs.show()
 
 
 #-----------------------
@@ -574,11 +557,7 @@ class SimWrap(lib.Struct):
         theta = self.ctrl.theta
         N = theta.shape[0]
         prop_delay_grid = self.ctrl.delay_params.delay_grid
-        offset_grid = np.tile(theta.reshape(-1,1), N)
-        offset_grid +=  -1*offset_grid.T
-        offset_grid +=  -1*prop_delay_grid
-        offset_l = offset_grid[np.tril_indices(offset_grid.shape[0],k=-1)]
-        offset_u = offset_grid[np.triu_indices(offset_grid.shape[0],k=1)]
+        offset_grid = lib.build_diff_grid(theta) -1*prop_delay_grid
         linkcount =  (N**2 - N)
 
         lo, hi = [k*1e-6*self.p.f_samp for k in self.conv_offset_limits]
@@ -586,10 +565,12 @@ class SimWrap(lib.Struct):
 
         output['good_link_ratio'] = good_links/linkcount
 
-        
         if self.show_eval_convergence:
             for key, item in sorted(output.items()):
                 print(key + ": " + str(item))
+
+        # Add things that are not going to be printed by self.show_eval_convergence
+        output['conv_offset_limit'] = self.conv_offset_limits
 
         return output
 

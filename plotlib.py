@@ -463,6 +463,7 @@ def freq_response(b,a, axes=None, savename=''):
     ax.set_ylabel('Frequency Response')
     return ax
 
+
 #----- CATTED GRAPHS
 def cat_graphs(graphs, rows=2,subplotsize=(9,5), savename=''):
     """Concatenate the figures together together
@@ -578,7 +579,31 @@ def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best', 
 
     return ax
 
+def time_offset_cdf(dates, bins=1000, axes=None, savename=''):
+    """Plots the CDF of the delays"""
+    sorted_dates = sorted(dates)
+    datelist = db.fetch_range(sorted_dates, ['date'])
+    delays, cdf = lib.empiric_offset_cdf(datelist, bins=bins)
 
+    x = lib.si_prefix(delays, 'mu')
+    y = cdf
+    ax = continuous(x, y,axes=axes)
+    ax.set_xlabel('Time (\mu s)')
+    ax.set_ylabel('Cumulative Prob.')
+    return ax
 
+def time_offset_pdf(dates, bins=1000, axes=None, savename=''):
+    """Plots the CDF of the delays"""
+    sorted_dates = sorted(dates)
+    datelist = db.fetch_range(sorted_dates, ['date'])
+    bins, cdf  = lib.empiric_offset_cdf(datelist)
+
+    x = lib.si_prefix((bins[1:] + bins[:-1])/2, 'mu')
+    y = cdf[1:]-cdf[:-1]
+
+    ax = continuous(x, y,axes=axes)
+    ax.set_xlabel('Time (\mu s)')
+    ax.set_ylabel('Probability')
+    return ax
 
 
