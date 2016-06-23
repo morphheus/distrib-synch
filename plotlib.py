@@ -106,6 +106,21 @@ def scatter(x, y, yerr, x_label='', y_label='',axes=None, savename='',show_std=T
     save(savename)
     return ax
 
+def scatter_noerr(x, y, x_label='', y_label='',axes=None, savename='',show_std=True, **kwargs):
+    """Scatter plot with no errorbars"""
+
+    if axes == None:
+        ax = plt.axes()
+    else:
+        ax = axes
+
+    lh = ax.scatter(x, y, **kwargs )
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+
+    save(savename)
+    return ax
+
 def surface3d(x,y,z, density=20, **kwargs):
     """3d plot of the x, y vectors and z 2d array"""
 
@@ -424,7 +439,7 @@ def delay_grid(ctrl, unit='km', axes=None, savename=''):
     x,y = [lib.samples2dist(k, ctrl.f_samp, unit) for k in [x,y]]
     lims = [lib.samples2dist(k, ctrl.f_samp, unit) for k in lims]
 
-    ax = scatter(x,y, 0,axes=axes)
+    ax = scatter_noerr(x,y,axes=axes)
     ax.set_xlabel('x-axis (' + unit + ')')
     ax.set_ylabel('y-axis (' + unit + ')')
     ax.set_xlim(lims)
@@ -579,8 +594,8 @@ def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best', 
 
     return ax
 
-def time_offset_cdf(dates, bins=1000, axes=None, savename=''):
-    """Plots the CDF of the delays"""
+def time_offset_cdf(dates, bins=10000, axes=None, savename='', cplen=5.6, truncate=True):
+    """Plots the CDF of the delays. cplen is in microseconds"""
     sorted_dates = sorted(dates)
     datelist = db.fetch_range(sorted_dates, ['date'])
     delays, cdf = lib.empiric_offset_cdf(datelist, bins=bins)
@@ -588,22 +603,22 @@ def time_offset_cdf(dates, bins=1000, axes=None, savename=''):
     x = lib.si_prefix(delays, 'mu')
     y = cdf
     ax = continuous(x, y,axes=axes)
-    ax.set_xlabel('Time (\mu s)')
-    ax.set_ylabel('Cumulative Prob.')
-    return ax
+    ax.set_xlabel(r'Time ($\mu s$)')
+    ax.set_ylabel(r'Cumulative Prob.')
 
-def time_offset_pdf(dates, bins=1000, axes=None, savename=''):
-    """Plots the CDF of the delays"""
-    sorted_dates = sorted(dates)
-    datelist = db.fetch_range(sorted_dates, ['date'])
-    bins, cdf  = lib.empiric_offset_cdf(datelist)
+    ylims = ax.get_ylim()
+    # Add CP thing
+    ax.plot([cplen, cplen], ylims, 'k--')
+    txt_str = r' $t_{cp} = $'+ str(cplen) + '$\mu s$' 
+    txt_str = r' $t_{cp} - \tau_{max}$'
+    ax.text(cplen, 0.02, txt_str, ha='left', va='bottom' )
 
-    x = lib.si_prefix((bins[1:] + bins[:-1])/2, 'mu')
-    y = cdf[1:]-cdf[:-1]
+    if truncate:
+        ax.set_xlim([0,1.4*cplen])
 
-    ax = continuous(x, y,axes=axes)
-    ax.set_xlabel('Time (\mu s)')
-    ax.set_ylabel('Probability')
+
+    
+    save(savename)
     return ax
 
 

@@ -22,6 +22,12 @@ NOSAVELIST = [
     'CFO'
     ]
 
+DELAY_PARAMS_SAVELIST = [
+    'delay_grid',
+    'gridx',
+    'gridy'
+    ]
+
 #----------------------------------
 class SimControls(lib.Struct):
     """Container object for the control parameters of the runsim() function"""
@@ -237,7 +243,6 @@ def runsim(p,ctrl):
     theta = np.random.randint(theta_minmax[0],theta_minmax[1]+1, size=nodecount)
     deltaf = np.random.uniform(deltaf_minmax[0],deltaf_minmax[1], size=nodecount)
     clk_creation = np.random.randint(0,chansize, size=nodecount)
-    channels = lib.cplx_gaussian( [nodecount,chansize], noise_var) 
     md_static_offset = clk_creation % p.spacing
 
     if ctrl.max_start_delay:
@@ -247,6 +252,7 @@ def runsim(p,ctrl):
 
     # Make sure static nodes are always start by 
     start_delay[nodetype=='static'] = 0
+    channels = lib.cplx_gaussian( [nodecount,chansize], noise_var) 
     
 
     if not ctrl.rand_init:
@@ -549,6 +555,7 @@ def runsim(p,ctrl):
 
     if ctrl.saveall:
         ctrl.add(**p.__dict__)
+        #ctrl.add({key, val for key,val in ctrl.delay_params.__dict__ if 
         for var in NOSAVELIST:
             del ctrl.__dict__[var]
 

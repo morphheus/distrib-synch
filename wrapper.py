@@ -3,14 +3,16 @@
 
 import dumbsqlite3 as db
 import plotlib as graphs
-import os
+import thygraphs
 import lib
+
+import os
 import numpy as np
 import warnings
 import inspect
 import time
-import thygraphs
 import math
+import copy
 
 from numpy import pi
 
@@ -128,29 +130,28 @@ def dec_wrap2():
 
     p.power_weight = 2
     p.full_sim = True
-    p.bias_removal = False
+    p.bias_removal = True
     p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
-    p.train_type = 'single' # Type of training sequence
+    p.train_type = 'chain' # Type of training sequence
     p.crosscorr_type = 'match_decimate' 
     p.match_decimate_fct = lib.downsample
     p.peak_detect = 'wavg' 
     p.pulse_type = 'rootraisedcosine'
     p.central_padding = 0 # As a fraction of zpos length
     p.scfdma_precode = True
-    p.scfdma_L = 8
-    p.scfdma_M = p.zc_len*p.scfdma_L
-
+    p.scfdma_L = 4 
+    p.scfdma_sinc_len_factor = p.scfdma_L
 
     ctrl = SimControls()
-    ctrl.steps = 20 # Approx number of emissions per node
+    ctrl.steps = 45 # Approx number of emissions per node
     ctrl.basephi = 6000 # How many samples between emission
     ctrl.display = True # Show stuff in the console
     ctrl.keep_intermediate_values = False # Needed to draw graphs
-    ctrl.nodecount = 5 # Number of nodes
+    ctrl.nodecount = 40 # Number of nodes
     ctrl.static_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
-    ctrl.TO_step_wait = 10
-    ctrl.max_start_delay = 0 # In factor of basephi
+    ctrl.TO_step_wait = 5
+    ctrl.max_start_delay = 10 # In factor of basephi
 
     #ctrl.theta_bounds = [0.3,0.7] # In units of phi
     #ctrl.theta_bounds = [0.48,0.52] # In units of phi
@@ -164,10 +165,9 @@ def dec_wrap2():
     #ctrl.noise_power = float('-inf')
     ctrl.noise_power = -101 + 9 # in dbm
 
-    ctrl.delay_params = lib.DelayParams(lib.delay_pdf_lognorm)
+    ctrl.delay_params = lib.DelayParams(lib.delay_pdf_3gpp_exp)
     ctrl.delay_params.taps = 5
     ctrl.delay_params.max_dist_from_origin = 250 # (in meters)
-    ctrl.delay_params.p_sigma = 40 # Paths sigma
 
     ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
@@ -187,7 +187,7 @@ def dec_wrap2():
     ctrl.pc_step_wait = 0
     ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(7)
     ctrl.pc_avg_thresh = float('inf') # If std of N previous TOx samples is above this value, then\
-    ctrl.pc_std_thresh = float(40) # If std of N previous TOx samples is above this value, then\
+    ctrl.pc_std_thresh = float(80) # If std of N previous TOx samples is above this value, then\
                      # no PC is applied (but TOy is still calculated)
     
     ctrl.saveall = True
@@ -197,12 +197,18 @@ def dec_wrap2():
     ncount_hi = 81
     step = 5
     ntot = math.floor((ncount_hi - ncount_lo - 1)/abs(step))
-    cdict = {'rand_init':[True]}
+
     #cdict = {
     #    'nodecount':[x for x in range(ncount_lo, ncount_hi,step)]*3
     #    }
-
-    pdict = {}
+    
+    cdict = {
+        'prop_correction':[False, True , True , True],
+    }
+    pdict = {
+        'bias_removal':[False, False, True , True],
+        'scfdma_precode':[False, False, False, True]
+    }
     #pdict = {'match_decimate_fct':[lib.md_clkphase]*ntot+[lib.md_energy]*ntot+[lib.md_static]*ntot}
 
     return ctrl, p, cdict, pdict
@@ -210,12 +216,8 @@ def dec_wrap2():
 #------------------------
 def main_thesis():
 
-
-
-    
     ctrl, p, cdict, pdict = dec_wrap1()
     sim = SimWrap(ctrl, p, cdict, pdict)
-
 
     graphs.crosscorr(p); graphs.show(); exit()
 
@@ -247,40 +249,40 @@ def main_interd():
     #graphs.continuous(x, y); graphs.show()
     #exit()
 
-
-
     ctrl, p, cdict, pdict = dec_wrap2()
+    init_cdict = {**cdict, **pdict}
     sim = SimWrap(ctrl, p, cdict, pdict)
 
 
     #print(lib.thy_ssstd(ctrl))
     #graphs.freq_response(ctrl.pc_b, ctrl.pc_a); graphs.show(); exit()
+    #graphs.crosscorr(p); graphs.show(); exit()
     #graphs.delay_pdf(ctrl); graphs.show(); exit()
     #graphs.delay_grid(ctrl); graphs.show(); exit()
-    sim.ctrl.keep_intermediate_values = True
-    sim.show_CFO = False
-    #sim.set_all_nodisp()
-    sim.simulate()
-    sim.post_sim_plots()
-    exit()
-
+    #sim.ctrl.keep_intermediate_values = True
+    #sim.show_CFO = False
+    ##sim.set_all_nodisp()
+    #sim.simulate()
+    #sim.post_sim_plots()
+    #exit()
 
     sim.set_all_nodisp()
     sim.ctrl.keep_intermediate_values = True
     sim.make_plots = False
-    sim.repeat = 10
+    sim.repeat = 40
     sim.ctrl.rand_init = True
-
-
-
 
     simstr = 'all'
     tsims = sim.total_sims(simstr)
-    #dates = sim.simmany(simstr);# dates = [dates[0], dates[-1]]
+    dates = sim.simmany(simstr);# dates = [dates[0], dates[-1]]
     #dates = [20160507165437730, 20160508114538466]
-    dates = db.fetch_last_n_dates(tsims); dates = [dates[0], dates[-1]]
+    dates = db.fetch_last_n_dates(tsims);
+    #dates = [dates[0], dates[-1]]
 
-    graphs.time_offset_cdf(dates); graphs.show()
+    lib.options_convergence_analysis(dates, init_cdict, write=False)
+
+
+    #graphs.time_offset_cdf(dates, savename=''); graphs.show()
  
 
 
@@ -300,17 +302,13 @@ class SimWrap(lib.Struct):
     show_siglen = True
     show_bary = False
     show_elapsed = True
-    show_eval_convergence = True
+    show_conv = True
     repeat = 1
     last_msg_len = 0
 
     cdict = dict()
     pdict = dict()
 
-    #Convergence criterions
-    conv_eval_cfo = False
-    conv_min_slope_samples = 5 # Minimum # of samples to take for slope eval
-    conv_offset_limits = [-3.4, 1.8] # In micro seconds
     
 
 
@@ -337,10 +335,6 @@ class SimWrap(lib.Struct):
 
         base_avg_amp = np.float64((np.sum(np.abs(self.p.analog_sig)))/len(self.p.analog_sig))
         self.ctrl.trans_amp = lib.db2amp(ctrl.trans_power)*base_avg_amp
-
-    def update_conv_criterions(self):
-        """Updates the time offset limits from the p object"""
-        pass
 
     def update_params(self,  ctrl=None, p=None):
         """Updates the params and runs barywidth_map if needed"""
@@ -377,7 +371,7 @@ class SimWrap(lib.Struct):
         self.show_bary = False
         self.show_elapsed = False
         self.ctrl.display = False
-        self.show_eval_convergence = False
+        self.show_conv = False
 
     def simulate(self):
         """Simulate and run post-sim stuff, such as graphs or output saving"""
@@ -401,7 +395,12 @@ class SimWrap(lib.Struct):
 
         # Exec the simulation and save the output
         runsim(self.p, self.ctrl)
-        self.ctrl.add(**self.eval_convergence())
+
+        # Fix bias removal opt (it contains numbers)
+        if self.ctrl.bias_removal != False:
+            self.ctrl.bias_removal = True
+        
+        self.ctrl.add(**lib.eval_convergence(self, show_eval_convergence=self.show_conv))
         self.ctrl.date = lib.build_timestamp_id();
         db.add(self.ctrl.__dict__)
 
@@ -473,6 +472,8 @@ class SimWrap(lib.Struct):
             
             if self.prep_bary:
                 self.update_bary()
+
+            self.ctrl.update()
             yield True
 
         yield False # When both dicts are empty,  return false.
@@ -491,6 +492,7 @@ class SimWrap(lib.Struct):
                         obj.change(key, lst.pop())
                         if self.prep_bary:
                             self.update_bary()
+                        self.ctrl.update()
                         yield True
                     if not lst: 
                         todel.append(key)
@@ -522,57 +524,6 @@ class SimWrap(lib.Struct):
         
         return count*self.repeat
 
-    def eval_convergence(self):
-        """Evaluates if convergence has been achieved"""
-        if not self.ctrl.simulated:
-            raise Exception("Function must be executed after a simulation has been done")
-
-        output = {}
-
-        def drift_eval(lst):
-            """Calculates the average slope for the last self.min_slope_samples"""
-            min_len = min([len(x) for x in lst])
-            datacount = self.conv_min_slope_samples
-            if datacount > min_len:
-                datacount = min_len
-                warnings.warn('slope domain bigger than minimum domain; not enough intermediate samples')
-            #extract the relevant samples
-            data = np.zeros([len(lst), datacount])
-            for k,sublist in enumerate(lst):
-                data[k,:] = np.array(sublist[-datacount:])
-
-            # Calculate slope
-            slopes = np.ediff1d(np.mean(data, axis=0))
-            return np.mean(slopes), np.std(slopes)
-
-        # Evaluate drift slope over the last domain% or 5 intermediate vals
-        tlist = self.ctrl.theta_inter
-        flist = self.ctrl.deltaf_inter
-
-        output['theta_drift_slope_avg'], output['theta_drift_slope_std'] = drift_eval(tlist)
-        if self.conv_eval_cfo:
-            output['deltaf_drift_slope_avg'], output['deltaf_drift_slope_std'] = drift_eval(flist)
-
-        # Evaluate communication capabilites between all nodes 
-        theta = self.ctrl.theta
-        N = theta.shape[0]
-        prop_delay_grid = self.ctrl.delay_params.delay_grid
-        offset_grid = lib.build_diff_grid(theta) -1*prop_delay_grid
-        linkcount =  (N**2 - N)
-
-        lo, hi = [k*1e-6*self.p.f_samp for k in self.conv_offset_limits]
-        good_links = ((offset_grid>lo) & (offset_grid<hi)).sum() - N
-
-        output['good_link_ratio'] = good_links/linkcount
-
-        if self.show_eval_convergence:
-            for key, item in sorted(output.items()):
-                print(key + ": " + str(item))
-
-        # Add things that are not going to be printed by self.show_eval_convergence
-        output['conv_offset_limit'] = self.conv_offset_limits
-
-        return output
 
     
 

@@ -8,6 +8,7 @@ import time
 import inspect
 import os.path
 import string
+import traceback
 from sqlite3 import OperationalError
 
 from numpy import pi
@@ -18,7 +19,7 @@ from scipy.signal import fftconvolve
 from scipy.optimize import curve_fit, leastsq
 
 import dumbsqlite3 as db
-
+import py2tex
 
 
 LOGFILE = 'simlog.txt'
@@ -150,26 +151,35 @@ def rrcosfilter(N, a, T, f, dtype=CPLX_DTYPE, frac_TO=0):
     warnings.filterwarnings("always")
     return time,h
 
-def scfdma_filter(seq, M, offset):
+def scfdma_filter(seq, L, offset):
     """Applies an SC-FDMA modulation"""
     
     N = len(seq)
+    M = L*N
     if offset + N > M:
         raise ValueError('Offset too high. Max allowed value is M-N')
 
     S = np.fft.fft(seq)
-    C = np.concatenate((np.zeros(offset), S, np.zeros(M-offset)))
+    C = np.concatenate((np.zeros(offset), S, np.zeros(M-N-offset)))
     return np.fft.ifft(C)
 
-def scfdma_sinc(N, L):
+def scfdma_sinc(N, L, len_factor):
     """Returns the interpolating pulse for SCFDMA with the appropriate parameter"""
-    xmax = 1*L*N
+    M = len_factor*N
+    xmax = 1*M
     xmin = -1*xmax
     x = np.arange(xmin, xmax+1)
-    x[xmax] = 1
-    out = np.sin(pi*x/L)/np.sin(pi*x/(L*N))
-    out[xmax] = L*N
-    return out
+    x[x==0] = 1
+    sinc = np.sin(pi*x/L)/np.sin(pi*x/(L*N))* 1/M
+    sinc[xmax] = 1
+
+    # Apply the systemic CFO
+    tmp0 = np.arange(N)
+    tmp1 = np.repeat(tmp0,L)
+    tmp2 = np.concatenate([tmp1, tmp1, np.array([0])])
+    
+    sinc = sinc*np.exp(-1j*pi*np.arange(2*M+1) * (1-1/(2*M+1)) )
+    return sinc
 
 #---------------------------
 def calc_snr(ctrl,p):
@@ -462,6 +472,7 @@ def calc_both_barycenters(p,chan, mode='valid' , md_start_idx=0):
     barycorr_kwargs ={'power_weight':p.power_weight, 'bias_thresh':p.bias_removal, 'mode':mode, 'ma_window':p.ma_window, 'peak_detect':p.peak_detect}
 
     corr_spacing = 1
+    start_index = 0
     
     if p.crosscorr_type == 'match_decimate':
         g, start_index = p.match_decimate_fct(chan, p.pulse, p.spacing, md_start_idx)
@@ -481,9 +492,9 @@ def calc_both_barycenters(p,chan, mode='valid' , md_start_idx=0):
 
     
     if p.scfdma_precode:
-        g, _ = md_static(g, p.scfdma_pulse, p.scfdma_L)
+        g, _ = md_scfdma_static(g, p.scfdma_pulse, p.scfdma_L)
+        #g, _ = downsample(g, p.scfdma_pulse, p.scfdma_L)
         corr_spacing *= p.scfdma_L
-        pass
     
     # Apply the cross-correlations
     barypos, crosscorrpos = barycenter_correlation(f1 , g, **barycorr_kwargs) 
@@ -543,7 +554,7 @@ def barycenter_correlation(f,g, peak_detect='wavg', power_weight=2, bias_thresh=
     
     return barycenter, cross_correlation
 
-def md_energy(signal, pulse, spacing, expected_start_index=0, mode='same'):
+def md_energy(signal, pulse, spacing, expected_start_index=0):
     """Cross-correlated the signal with the shaping pulse
     Then, decimate the resulting signal such that the output has the highest energy
     signal : Signal to pply matched filter on
@@ -552,6 +563,8 @@ def md_energy(signal, pulse, spacing, expected_start_index=0, mode='same'):
     expectd_start_idx: not used
     """
 
+    M = len(signal)
+    N = len(pulse)
     cross_correlation = crosscorr_fct(pulse,signal, mode)
 
     # Pick decimation with highest energy
@@ -564,42 +577,56 @@ def md_energy(signal, pulse, spacing, expected_start_index=0, mode='same'):
             max_energy = energy
             decimated_start_index = k
 
-    decimated = cross_correlation[decimated_start_index::spacing]
+
+    # output is forced with the length of the signal
+    s1 = (N-1)/2 if N%2 else N/2 - 1
+    s1 = int(s1)
+    s1 += decimated_start_index
+    decimated = cross_correlation[s1:s1+M:spacing]
+
+    print(len(decimated))
     
     return decimated, decimated_start_index
 
-def md_static(signal, pulse, spacing, expected_start_index=0, mode='same'):
-    """Cross-correlates the signal with the shaping pulse
-    Then, decimates the resulting signal starting at the specified start index
-    signal : Signal to pply matched filter on
-    pulse  : Signal to match filter with
-    spacing: Symbol period, in samples"""
+def md_scfdma_static(signal, pulse, spacing, expected_start_index=0):
+    """Cross-correlates the signal with the shaping pulse. THe outpût has the lenth of hte
+    input signal"""
 
-    cross_correlation = crosscorr_fct(pulse,signal, mode)
-    # Pick decimation with highest energy
-    abs_crosscorr = np.abs(cross_correlation)
-    decimated = cross_correlation[expected_start_index::spacing]
+    M = len(signal)
+    N = len(pulse)
+    cross_correlation = crosscorr_fct(pulse,signal, 'full')
+
+    # output is forced with the length of the signal
+    s1 = (N-1)/2 if N%2 else N/2 - 1
+    s1 = int(s1)
+    s1 += expected_start_index
+    decimated = cross_correlation[s1:s1+M:spacing]
     
     return decimated, expected_start_index
 
-def md_clkphase(signal, pulse, spacing, expected_start_index=0, mode='same'):
+def md_clkphase(signal, pulse, spacing, expected_start_index=0):
     """Cross-correlates the signal with the shaping pulse
     Then, decimates the resulting signal starting at the specified start index
     signal : Signal to pply matched filter on
     pulse  : Signal to match filter with
     spacing: Symbol period, in samples"""
+    M = len(signal)
+    N = len(pulse)
 
-    cross_correlation = crosscorr_fct(pulse,signal, mode)
-    # Pick decimation with highest energy
-    abs_crosscorr = np.abs(cross_correlation)
 
-    start_index = (len(signal)-1) % spacing
-    #decimated = cross_correlation[::-1][0::spacing][::-1]
-    decimated = cross_correlation[start_index::spacing]
+    cross_correlation = crosscorr_fct(pulse,signal, 'full')
+    start_index = (M-1) % spacing
+
+    # output is forced with the length of the signal
+    s1 = (N-1)/2 if N%2 else N/2 - 1
+    s1 = int(s1)
+    s1 += start_index
+    
+    decimated = cross_correlation[s1:s1+M:spacing]
     
     return decimated, start_index
 
-def downsample(signal, pulse, spacing, expected_start_index=0, mode='same'):
+def downsample(signal, pulse, spacing, expected_start_index=0):
     """Simply downsamples the input signal"""
     return signal[expected_start_index::spacing], expected_start_index
 
@@ -651,8 +678,14 @@ def cfo_mapper_injective(barywidth, p):
 
 def cfo_mapper_step_sin(barywidth, p):
     """Step sin function mapper"""
-
     return none
+
+def delay_DS_RMa(f_samp,los):
+    """Picks the delay spread according to 38900 - RMA"""
+    mu, sigma = (-7.49,0.55) if los else (-7.43,0.48)
+    DS = 10**np.random.normal(mu,sigma)*f_samp
+    rt = 3.8 if los else 1.7
+    return DS, rt
 
 def delay_pdf_gaussian():
     pass
@@ -683,6 +716,13 @@ def delay_pdf_exp(t, sigma, t0=0):
 
     return amp
 
+def delay_pdf_3gpp_exp(t, DS, rt, t0=0):
+    """Power delay profile taken from 3GPP 38900 RMa"""
+
+    l = (rt-1)/(rt*DS)
+    amp = np.exp(-l*(t - t0)) if t >= t0 else 0
+    return amp
+
 def delay_pdf_lognorm(t, sigma, t0=0):
     """Exponentially decaying delay PDF""
     amp = (1/sigma) exp(-(1/sigma)*(t-t0))"""
@@ -694,11 +734,15 @@ def delay_pdf_lognorm(t, sigma, t0=0):
 
     return amp
 
+@np.vectorize
 def pathloss_freespace(d, f_carr):
     """Free space path loss. Frequencies are expected in MHz, d in meters"""
-    return 20*log10(d) + 46.4 + 20*log10(f_carr*1e-9/5)
+    if d == 0:
+        return 0
+    
+    return 20*np.log10(d) + 46.4 + 20*np.log10(f_carr*1e-9/5)
 
-def pathloss_b1(d, f_carr, los=True):
+def pathloss_b1(delays, f_carr, losarr):
     """Path loss from table 4.1 in D5.1_v1.0, hexagonal layout. f_carr expected in Hz"""
     fc = f_carr * 1e-9 # Carrier frequency in GHz (to make the switch statement more readable)
 
@@ -709,45 +753,55 @@ def pathloss_b1(d, f_carr, los=True):
     dbp = 3*hbsP*hmsP*f_carr/SOL
 
     # IF reaaallly close, model breaks down
-    if 0 <= d < 3:
-        return 0.2
-    # yes los
-    elif los:
-        if d < dbp:
-            pl = 22.7*log10(d) + 27 + 20*log10(fc)
-        else:
-            pl = 40*log10(d) + 7.56 - 17.3*log10(hbsP) - 17.3*log10(hmsP) + 2.7*log10(fc)
-    # no los
+    d = delays.flatten()
+    los = losarr.flatten()
+
+    if (d<0).any():
+        raise ValueError('Negative delay not allowed')
+
+    # No los
+    pl = (44.9 - 6.55*log10(hbs))*log10(d) + 5.83*log10(hbs) - 5 # -5 from 36843 specs
+    if 0.45 <= fc < 1.5:
+        pl += 16.33 + 26.16*log10(fc)
+    elif 1.5 <= fc < 2:
+        pl += 14.78 + 34.97*log10(fc)
+    elif 2 <= fc < 6:
+        pl += 18.38 + 23*log10(fc)
     else:
-        pl = (44.9 - 6.55*log10(hbs))*log10(d) + 5.83*log10(hbs) - 5 # -5 from 36843 specs
-        if 0.45 <= fc < 1.5:
-            pl += 16.33 + 26.16*log10(fc)
-        elif 1.5 <= fc < 2:
-            pl += 14.78 + 34.97*log10(fc)
-        elif 2 <= fc < 6:
-            pl += 18.38 + 23*log10(fc)
-        else:
-            raise ValueError('Expected f_carr between 0.45 and 6 GHz')
+        raise ValueError('Expected f_carr between 0.45 and 6 GHz')
+
+    # Yes los
+    pl[los] = 40*log10(d[los]) + 7.56 - 17.3*log10(hbsP) - 17.3*log10(hmsP) + 2.7*log10(fc)
+    pl[(d < dbp) * los] = 22.7*log10(d[(d < dbp) * los]) + 27 + 20*log10(fc)
+
+    # Model breaks down if d too small
+    pl[(d<3)] = 0.2
+
+
+    # Back to 2d
+    pl = pl.reshape(*delays.shape)
     
     return pl
 
-@np.vectorize
 def pathloss_b1_tot(x, f_samp, f_carr, out_format='amp'):
     """B1_tot, as specified in 36843, A.2.1.2"""
+    N = x.shape[0]
+    
 
-    if x < 0:
+    if (x<0).any():
         raise ValueError('Expected positive delay')
-    if x==0:
-        return 0 if out_format=='dB' else 1.0
+
+    tmp = x.copy()
+    np.fill_diagonal(tmp,1) 
 
     # Probability of LOS
-    d = samples2dist(x, f_samp, unit='m')
-    prob_los = min(18/d, 1)*(1-np.exp(-d/36)) + np.exp(-d/36) # Winner-B1 from table 4.7
-    los = np.random.choice([True, False], p=[prob_los, 1-prob_los]) # Roll the dice
+    d = samples2dist(tmp, f_samp, unit='m')
+    prob_los = np.min(18/d, 1)*(1-np.exp(-d/36)) + np.exp(-d/36) # Winner-B1 from table 4.7
+
+    los = np.random.rand(*prob_los.shape) < prob_los
 
     # Compute pathloss (in dB)
-    pl = max(pathloss_freespace(d, f_carr), pathloss_b1(d, f_carr, los=los))
-    #pl = pathloss_freespace(d, f_carr)
+    pl = np.maximum(pathloss_freespace(d, f_carr), pathloss_b1(d, f_carr, los))
 
     # Format the pathloss
     if out_format=='amp':
@@ -761,7 +815,7 @@ def pathloss_b1_tot(x, f_samp, f_carr, out_format='amp'):
     else:
         raise ValueError('Invalid output format: "' + out_format + '" not recognized.')
 
-    return out
+    return out, los
 
 def drop_unifcircle(N, D):
     """uniform drop N nodes within a circle of diameter D. Returns x and y coords"""
@@ -1046,9 +1100,6 @@ def build_cdf(data, bins=1000):
 def empiric_offset_cdf(dates, unit_prefix='mu', bins=1000):
     """
     Grab the theta_grids from the dates and outputs the offset cdf
-
-    if div=True, the 
-
     """
     datalist = list(db.fetch_matching({'date':dates},  ['theta', 'f_samp']))
 
@@ -1063,7 +1114,6 @@ def empiric_offset_cdf(dates, unit_prefix='mu', bins=1000):
     x, y = build_cdf(delays, bins=bins)
     return x,y
 
-
 def build_diff_grid(arr):
     """Builds a matrix of the difference between all entries in arr"""
     N = len(arr)
@@ -1071,9 +1121,158 @@ def build_diff_grid(arr):
     grid +=  -1*grid.T
     return grid
 
+def options_convergence_analysis(alldates, cdict, write=False):
+    """Analyses the convergence of the relevant options"""
+    
+    # First convert the dict of list into a list of tuple pairs
+    keys = []
+    sublists = []
+    for key, sublist in cdict.items():
+        keys.append(key)
+        sublists.append(sublist)
+
+    optlist = []
+    for tpl in zip(*sublists):
+        tmp = [(key, val) for key, val in zip(keys, tpl)]
+        optlist.append(tmp)
 
 
+    # For each options set, fetch the relevant data and comp the convergence
+    for opts in optlist:
+        conv_results = single_set_analysis(alldates, opts)
+        if len(conv_results)==0:
+            continue
+        pairs = py2tex.build_conv_pairs(conv_results, opts)
+        if write:
+            py2tex.write(pairs)
 
+def single_set_analysis(alldates, opts):
+    """Produces meta-analysis of the convergence criterions for the given options
+    opts: Dictionary of options to match"""
+
+    optnames = [x[0] for x in opts]
+    optvals  = tuple([x[1] for x in opts])
+    options_data = db.fetch_matching({'date':alldates}, collist=['date'] + optnames)
+
+    match_dates = []
+    for entry in options_data:
+        if entry[1:] == optvals:
+            match_dates.append(entry[0])
+
+    if not match_dates:
+        print('No match for \n' + str(opts))
+        exit()
+        return ()
+
+    conv_collist = ['delay_params',
+                    'sample_inter',
+                    'theta_inter',
+                    'deltaf_inter',
+                    'theta',
+                    'f_samp',
+                    'basephi']
+    rawdata = db.fetch_matching({'date':match_dates}, collist=conv_collist)
+
+    convlist = []
+    for entry in rawdata:
+        convlist.append(eval_convergence(dict(zip(conv_collist, entry))))
+
+    out = {}
+    out['tot'] = len(convlist)
+    out['gl_avg'] = np.array([x['good_link_ratio'] for x in convlist]).mean()
+    out['gl_min'] = np.array([x['good_link_ratio'] for x in convlist]).min()
+    out['beta_avg'] = np.array([x['theta_drift_slope_avg'] for x in convlist]).mean()
+
+    variances = (np.array([x['theta_drift_slope_std'] for x in convlist])**2).sum()
+    out['beta_std'] = np.sqrt(variances.mean())
+
+    return out
+
+def eval_convergence(nt, show_eval_convergence=False):
+    """Evaluates if convergence has been achieved on the namedtuple. Assumes nt
+    contains most fields a sim object would contain"""
+
+    #Convergence criterions
+    conv_eval_cfo = False
+    conv_min_slope_samples = 10 # Minimum # of samples to take for slope eval
+    conv_offset_limits = [-3.4, 1.8] # In micro seconds
+
+    #Var declare (simwrap vs dict)
+    if type(nt).__name__ == 'SimWrap':
+        slist = nt.ctrl.sample_inter
+        tlist = nt.ctrl.theta_inter
+        flist = nt.ctrl.deltaf_inter
+        theta = minimize_distance(nt.ctrl.theta, nt.ctrl.basephi)
+        prop_delay_grid = nt.ctrl.delay_params.delay_grid
+        f_samp = nt.p.f_samp
+    else:
+        slist = nt['sample_inter']
+        tlist = nt['theta_inter']
+        flist = nt['deltaf_inter']
+        theta = minimize_distance(nt['theta'], nt['basephi'])
+        prop_delay_grid = nt['delay_params']['delay_grid']
+        f_samp = nt['f_samp']
+
+    output = {}
+    def drift_eval(xlst, ylst):
+        """Calculates the average slope for the last nt.min_slope_samples"""
+        min_len = min([len(x) for x in ylst])
+        datacount = conv_min_slope_samples
+        if datacount > min_len:
+            datacount = min_len
+            warnings.warn('slope domain bigger than minimum domain; not enough intermediate samples')
+        #extract the relevant samples
+        ydata = np.zeros([len(ylst), datacount])
+        xdata = np.zeros([len(xlst), datacount])
+        for k,sublist in enumerate(xlst):
+            xdata[k,:] = np.array(sublist[-datacount:])
+        for k,sublist in enumerate(ylst):
+            ydata[k,:] = np.array(sublist[-datacount:])
+
+        # Calculate slope
+        slopes = []
+        for x,y in zip(xdata, ydata):
+            slopes.append(((x*y).mean() - x.mean()*y.mean())/np.var(x))
+
+        slopes = np.array(slopes)
+
+        #slopes = np.ediff1d(np.mean(data, axis=0))
+        return np.mean(slopes), np.std(slopes)
+
+    # Evaluate drift slope over the last domain% or 5 intermediate vals
+    theta_avg, theta_std = drift_eval(slist, tlist)
+    theta_slope_fact =  1e3
+    theta_slope_unit = 'ms per second'
+
+    theta_avg *= theta_slope_fact
+    theta_std *= theta_slope_fact
+    output['theta_drift_slope_avg'] = theta_avg
+    output['theta_drift_slope_std'] = theta_std
+    output['theta_drift_slope_unit'] = theta_slope_unit
+
+
+    if conv_eval_cfo:
+        output['deltaf_drift_slope_avg'], output['deltaf_drift_slope_std'] = drift_eval(slist, flist)
+
+    # Evaluate communication capabilites between all nodes 
+    N = theta.shape[0]
+    offset_grid = build_diff_grid(theta) -1*prop_delay_grid
+    linkcount =  (N**2 - N)
+
+
+    lo, hi = [k*1e-6*f_samp for k in conv_offset_limits]
+    good_links = ((offset_grid>lo) & (offset_grid<hi)).sum() - N
+
+    output['good_link_ratio'] = good_links/linkcount
+
+    if show_eval_convergence:
+        for key, item in sorted(output.items()):
+            print(key + ": " + str(item))
+
+    # Add things that are not going to be printed by nt.show_eval_convergence
+    output['conv_offset_limit'] = conv_offset_limits
+
+    return output
 
 
 
@@ -1093,8 +1292,7 @@ class DelayParams(Struct):
     """Parameters class for the delays between nodes"""
     def __init__(self, delay_pdf,
                  taps=1,
-                 max_dist_from_origin=0,
-                 p_sigma=0):
+                 max_dist_from_origin=0):
 
         if not callable(delay_pdf):
             raise ValueError(type(self).__name__ + " must be initialized with a callable PDF function")
@@ -1102,12 +1300,12 @@ class DelayParams(Struct):
         self.pathloss_fct = pathloss_b1_tot
         self.taps = taps
         self.max_dist_from_origin = max_dist_from_origin
-        self.p_sigma = p_sigma
+        self.DS_func = delay_DS_RMa
 
-    def delay_pdf_eval(self, t, t0=0, **kwargs):
-        return self.delay_pdf(t, self.p_sigma, t0=t0, **kwargs)
+    def delay_pdf_eval(self, t, DS, rt, t0=0, **kwargs):
+        return self.delay_pdf(t, DS, rt, t0=t0, **kwargs)
 
-    def rnd_delay(self,t0, **kwargs):
+    def rnd_delay(self,t0, los, f_samp, **kwargs):
         """Builds an array of delays with the associated amplitudes. Uniformly picks the delays,
         then feeds it into the PDF function. All time values in terms of basephi.
         input:
@@ -1118,8 +1316,10 @@ class DelayParams(Struct):
             delay: np array of the delays
             amps:  np array of the amplitudes
         """
-        delay_list =[t0] +  [np.random.rand()*np.sqrt(12)*self.p_sigma+t0 for x in range(self.taps-1)]
-        amp_list = [self.delay_pdf_eval(t,t0=t0, **kwargs) for t in delay_list]
+        DS, rt = self.DS_func(f_samp, los)
+        
+        delay_list =[t0]+sorted([-1*DS*rt*np.log(np.random.rand()) + t0 for x in range(self.taps-1)])
+        amp_list = [self.delay_pdf_eval(t,DS, rt,t0=t0, **kwargs) for t in delay_list]
         delay = np.array(delay_list, FLOAT_DTYPE)
         amp = np.array(amp_list, FLOAT_DTYPE)
         return delay, amp
@@ -1140,18 +1340,19 @@ class DelayParams(Struct):
         tx, ty = (tiled(self.gridx), tiled(self.gridy))
         self.delay_grid = np.sqrt((tx - tx.T)**2 + (ty - ty.T)**2)
 
-        self.pathloss_grid = self.pathloss_fct(self.delay_grid,
-                                               f_samp, f_carr, out_format='dB')
+        self.pathloss_grid, self.los_grid = self.pathloss_fct(self.delay_grid, f_samp, f_carr, out_format='dB')
 
         self.pathloss_grid = symmetrify(self.pathloss_grid)
 
+
+        # Build the multipath delays & amps
         # Have to use a for loop because reasons
         for k in range(nodecount):
             for l in range(nodecount):
                 if k == l:
                     continue
                 t0 = self.delay_grid[k,l]
-                delay, amp = self.rnd_delay(t0, **kwargs)
+                delay, amp = self.rnd_delay(t0, self.los_grid[k,l], f_samp, **kwargs)
                 echoes['delay'][k][l] = (delay).astype(INT_DTYPE)
                 echoes['amp'][k][l] = amp/db2amp(self.pathloss_grid[k,l])
 
@@ -1227,6 +1428,7 @@ class SyncParams(Struct):
 
         self.add(zpos=zpos)
         self.add(training_seq=training_seq)
+        self.add(training_seq_noprecode=training_seq)
 
     def calc_base_barywidth(self):
         """Calculates the barycenter width of the given parameters"""
@@ -1286,9 +1488,10 @@ class SyncParams(Struct):
         """Pulses-shapes the training sequence. Must run build_pulse and build_training_sequence first"""
         if self.scfdma_precode:
             offset = 0
-            tmp = len(self.training_seq)
-            self.training_seq = scfdma_filter(self.training_seq, self.scfdma_M, offset )
-            self.scfdma_pulse = scfdma_sinc(tmp, self.scfdma_L)
+            N = len(self.training_seq)
+            #tmp = np.exp(1j*pi*np.arange(N) * (1-1/(N)) )
+            self.training_seq = scfdma_filter(self.training_seq_noprecode, self.scfdma_L, offset )
+            self.scfdma_pulse = scfdma_sinc(N, self.scfdma_L, self.scfdma_sinc_len_factor)
 
         T = 1/self.f_samp
         analog_sig = d_to_a(self.training_seq, self.pulse, self.spacing)
@@ -1359,6 +1562,7 @@ class SyncParams(Struct):
             if tmp_full_sim:
                 self.full_sim = True
                 self.build_analog_sig()
+
         # If no bias removal, or already computed, just build  
         else:
             self.build_analog_sig()

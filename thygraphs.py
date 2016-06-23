@@ -51,7 +51,6 @@ def ml_pinit_no_pulse_shape():
     p.update()
     return p 
 
-
 def pinit64_no_pulse_shape():
     p = lib.SyncParams()
     p.zc_len = 63
@@ -123,7 +122,7 @@ def dec_regimes():
     ctrl.noise_power = float('-inf')
     #ctrl.noise_power = -101 + 9 # in dbm
 
-    ctrl.delay_params = lib.DelayParams(lib.delay_pdf_exp)
+    ctrl.delay_params = lib.DelayParams(lib.delay_pdf_3gpp_exp)
     ctrl.delay_params.taps = 5
     ctrl.delay_params.max_dist_from_origin = 250 # (in meters)
     ctrl.delay_params.p_sigma = 500 # Paths sigma
@@ -167,6 +166,102 @@ def dec_regimes():
     #pdict = {'match_decimate_fct':[lib.md_clkphase, lib.md_energy]}
 
     return ctrl, p, cdict, pdict
+
+def dec_sample_theta():
+    p = lib.SyncParams()
+    p.zc_len = 32
+    p.plen = 31
+
+    p.rolloff = 0.2
+    p.f_symb = 30.72e6
+    p.f_samp = p.f_symb*4
+    p.repeat = 1
+    p.spacing_factor = 1
+
+    p.power_weight = 2
+    p.full_sim = True
+    p.bias_removal = False
+    p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
+    p.train_type = 'single' # Type of training sequence
+    p.crosscorr_type = 'match_decimate' 
+    p.match_decimate_fct = lib.downsample
+    p.peak_detect = 'wavg' 
+    p.pulse_type = 'rootraisedcosine'
+    p.central_padding = 0 # As a fraction of zpos length
+    p.scfdma_precode = True
+    p.scfdma_L = 8
+    p.scfdma_M = p.zc_len*p.scfdma_L
+    p.scfdma_sinc_len_factor = p.scfdma_L
+
+
+    ctrl = SimControls()
+    ctrl.steps = 40 # Approx number of emissions per node
+    ctrl.basephi = 6000 # How many samples between emission
+    ctrl.display = True # Show stuff in the console
+    ctrl.keep_intermediate_values = False # Needed to draw graphs
+    ctrl.nodecount = 15 # Number of nodes
+    ctrl.static_nodes = 0
+    ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
+    ctrl.TO_step_wait = 5
+    ctrl.max_start_delay = 10 # In factor of basephi
+
+    #ctrl.theta_bounds = [0.3,0.7] # In units of phi
+    #ctrl.theta_bounds = [0.48,0.52] # In units of phi
+    #ctrl.theta_bounds = [0.5,0.5] # In units of phi
+    #ctrl.theta_bounds = [0,1] # In units of phi
+    ctrl.theta_bounds = [0,0.6] # In units of phi
+    ctrl.deltaf_bound = 3e-2
+    #ctrl.deltaf_bound = 0
+    ctrl.rand_init = False
+    ctrl.epsilon_TO = 0.5
+
+    #seed = int(np.random.rand()*1e8)
+    seed = 5845527
+    ctrl.non_rand_seed = seed # Only used if rand_init is False
+
+    #ctrl.non_rand_seed = 57276545 # Only used if rand_init is False
+    #ctrl.noise_power = float('-inf')
+    ctrl.noise_power = -101 + 9 # in dbm
+
+    ctrl.delay_params = lib.DelayParams(lib.delay_pdf_3gpp_exp)
+    ctrl.delay_params.taps = 5
+    ctrl.delay_params.max_dist_from_origin = 250 # (in meters)
+
+    ctrl.half_duplex = False
+    ctrl.hd_slot0 = 0.3 # in terms of phi
+    ctrl.hd_slot1 = 0.7 # in terms of phi
+    ctrl.hd_block_during_emit = True
+    ctrl.hd_block_extrawidth = 0 # as a factor of offset (see runsim to know what is offset)
+
+    ctrl.var_winlen = False
+    ctrl.vw_minsize = 5 # as a factor of len(p.analog_sig)
+    ctrl.vw_lothreshold = 0.1 # winlen reduction threshold
+    ctrl.vw_hithreshold = 0.1 # winlen increase threshold
+    ctrl.vw_lofactor = 1.5 # winlen reduction factor
+    ctrl.vw_hifactor = 2 # winlen increase factor
+    
+
+    ctrl.prop_correction = False
+    ctrl.pc_step_wait = 0
+    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(7)
+    ctrl.pc_avg_thresh = float('inf') # If std of N previous TOx samples is above this value, then\
+    ctrl.pc_std_thresh = float(80) # If std of N previous TOx samples is above this value, then\
+                     # no PC is applied (but TOy is still calculated)
+    
+    ctrl.saveall = True
+
+
+    cdict = {'rand_init':[True]}
+    #cdict = {
+    #    'nodecount':[x for x in range(ncount_lo, ncount_hi,step)]*3
+    #    }
+
+    pdict = {}
+    #pdict = {'match_decimate_fct':[lib.md_clkphase]*ntot+[lib.md_energy]*ntot+[lib.md_static]*ntot}
+
+    return ctrl, p, cdict, pdict
+
+
 
 
 def ml_full_3d(noise_var=1, fct=lib.ll_redux_2d):
@@ -290,19 +385,22 @@ def zero_padded_crosscorr():
 
 def highlited_regimes():
     """Highlights the converging vs the drift regime"""
-    ctrl, p, cdict, pdict = dec_regimes()
+
+
+    # DRIFT REGIME
+    ctrl, p, cdict, pdict = dec_sample_theta()
     sim = SimWrap(ctrl, p, cdict, pdict)
 
+    sim.conv_min_slope_samples = 15 
     sim.ctrl.keep_intermediate_values = True
     sim.show_CFO = False
-    sim.set_all_nodisp()
     sim.show_TO = False
     sim.simulate()
     ax, _ = sim.post_sim_plots(save_TO='', save_CFO='')
 
     # Draw biarrows
-    xmid = 13
-    xmax = ctrl.steps-4
+    xmid = 12
+    xmax = ctrl.steps
     xmin = 0
     ymin, ymax = ax.get_ylim()
     ya = ymin-0.03
@@ -326,6 +424,41 @@ def highlited_regimes():
     graphs.save(fname)
     graphs.show()
 
+
+
+    
+    # THETA EXAMPLE
+    ctrl, p, cdict, pdict = dec_sample_theta()
+    ctrl.prop_correction = True
+    sim = SimWrap(ctrl, p, cdict, pdict)
+
+    sim.conv_min_slope_samples = 15 
+    sim.ctrl.keep_intermediate_values = True
+    sim.show_CFO = False
+    sim.show_TO = False
+    sim.simulate()
+
+    ax, _ = sim.post_sim_plots(save_TO='', save_CFO='')
+    ax.set_xlim([xmin,xmax])
+    ax.set_ylim([ya-0.05,ymax])
+
+    
+    fname = 'latex_figures/example_theta'
+    graphs.save(fname)
+    graphs.show()
+
+def sample_theta():
+    """Sample N=20 theta evolution"""
+    ctrl, p, cdict, pdict = dec_regimes()
+    sim = SimWrap(ctrl, p, cdict, pdict)
+
+    sim.ctrl.keep_intermediate_values = True
+    sim.show_CFO = False
+    sim.set_all_nodisp()
+    sim.show_TO = False
+    sim.simulate()
+    ax, _ = sim.post_sim_plots(save_TO='', save_CFO='')
+    
 
 
 

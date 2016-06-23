@@ -100,10 +100,10 @@ def convert_list(text):
     return(eval(text))
 
 def convert_dict(text):
-    return(eval(text))
+    return exec(text)
 
 def convert_bool(boolean):
-    if boolean == 1:
+    if boolean == b'1':
         return True
     else:
         return False
@@ -115,7 +115,12 @@ def convert_function(text):
     return text.decode("utf-8")
 
 def convert_delayparams(text):
-    return str(text)
+    x = text.decode("utf-8")
+    x = x.replace('\n','')
+    x = x.replace('<',"'<")
+    x = x.replace('>',"<'")
+    x = x.replace('array','np.array')
+    return eval(x)
 
 def convert_syncparams(text):
     return str(text)
@@ -258,19 +263,15 @@ def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
         if type(val) == type(dict()):
             val = list(val.items())
 
-        
         collist.append(cn)
         vallist.append(val)
 
     c.execute("INSERT INTO {} ({}) VALUES ({})".format(tn, __PRIMARY, data[__PRIMARY]))
     for k in range(len(collist)):
-        
         try:
             c.execute("UPDATE {} SET {}=(?) WHERE date={}".format(tn, collist[k], data[__PRIMARY])\
                     , (vallist[k],))
         except sqlite3.InterfaceError as e:
-            #c.execute("UPDATE {} SET {}=(?) WHERE date={}".format(tn, collist[k], data[__PRIMARY])\
-                    #, (list(vallist[k]),))
             raise type(e)('Error on ' + str(collist[k]) + ' with value ' + str(vallist[k]))
             
     conn.commit()
@@ -367,7 +368,7 @@ def fetch_matching(entry_dict, collist=None, tn=DEF_TABLE, dbase_file=DEF_DB, co
     string += "("
     for key, val in list(entry_dict.items()):
         if len(val)==1:
-            string += key + " in (" + str(val[0]) + ")"
+            string += key + " in ('" + str(val[0]) + "')"
         else:
             string += key + " in " + str(tuple(val)) + ""
         string += " AND "
@@ -475,9 +476,6 @@ def fetch_last_n_dates(n, **kwargs):
     """Fetches the last n dates"""
     db_out = fetch_last_n(n, [''])
     return [k[0] for k in db_out]
-
-
-
 
 
 
