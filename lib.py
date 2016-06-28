@@ -687,6 +687,13 @@ def delay_DS_RMa(f_samp,los):
     rt = 3.8 if los else 1.7
     return DS, rt
 
+def delay_DS_UMi(f_samp,los):
+    """Picks the delay spread according to 38900 - UMI"""
+    mu, sigma = (-7.19,0.40) if los else (-6.89,0.54)
+    DS = 10**np.random.normal(mu,sigma)*f_samp
+    rt = 3 if los else 3
+    return DS, rt
+
 def delay_pdf_gaussian():
     pass
 
@@ -1164,7 +1171,7 @@ def single_set_analysis(alldates, opts):
         exit()
         return ()
 
-    conv_collist = ['delay_params',
+    conv_collist = ['delay_grid',
                     'sample_inter',
                     'theta_inter',
                     'deltaf_inter',
@@ -1188,14 +1195,14 @@ def single_set_analysis(alldates, opts):
 
     return out
 
-def eval_convergence(nt, show_eval_convergence=False):
+def eval_convergence(nt,
+                     show_eval_convergence=False,
+                     conv_min_slope_samples=40,
+                     conv_offset_limits=[-3.4, 1.8]):
     """Evaluates if convergence has been achieved on the namedtuple. Assumes nt
     contains most fields a sim object would contain"""
 
-    #Convergence criterions
-    conv_eval_cfo = False
-    conv_min_slope_samples = 10 # Minimum # of samples to take for slope eval
-    conv_offset_limits = [-3.4, 1.8] # In micro seconds
+    conv_eval_cfo = False # always false
 
     #Var declare (simwrap vs dict)
     if type(nt).__name__ == 'SimWrap':
@@ -1210,7 +1217,7 @@ def eval_convergence(nt, show_eval_convergence=False):
         tlist = nt['theta_inter']
         flist = nt['deltaf_inter']
         theta = minimize_distance(nt['theta'], nt['basephi'])
-        prop_delay_grid = nt['delay_params']['delay_grid']
+        prop_delay_grid = nt['delay_grid']
         f_samp = nt['f_samp']
 
     output = {}
@@ -1300,7 +1307,7 @@ class DelayParams(Struct):
         self.pathloss_fct = pathloss_b1_tot
         self.taps = taps
         self.max_dist_from_origin = max_dist_from_origin
-        self.DS_func = delay_DS_RMa
+        self.DS_func = delay_DS_UMi
 
     def delay_pdf_eval(self, t, DS, rt, t0=0, **kwargs):
         return self.delay_pdf(t, DS, rt, t0=t0, **kwargs)

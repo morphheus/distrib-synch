@@ -18,15 +18,11 @@ from pprint import pprint
 
 
 NOSAVELIST = [
+    'delay_params',
     'TO',
     'CFO'
     ]
 
-DELAY_PARAMS_SAVELIST = [
-    'delay_grid',
-    'gridx',
-    'gridy'
-    ]
 
 #----------------------------------
 class SimControls(lib.Struct):
@@ -51,7 +47,7 @@ class SimControls(lib.Struct):
         self.TO_step_wait = 1
         self.rand_init = False
         self.display = True # Display progress of runsim
-        self.keep_intermediate_values = False
+        self.keep_intermediate_values = True
         self.delay_fct = lib.delay_pdf_static
         self.deltaf_bound = 0.02 # in units of f_samp
         self.bmap_reach = 3e-1
@@ -555,9 +551,10 @@ def runsim(p,ctrl):
 
     if ctrl.saveall:
         ctrl.add(**p.__dict__)
-        #ctrl.add({key, val for key,val in ctrl.delay_params.__dict__ if 
-        for var in NOSAVELIST:
-            del ctrl.__dict__[var]
+
+
+    
+
 
 
 
