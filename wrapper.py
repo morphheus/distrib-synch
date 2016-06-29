@@ -55,14 +55,18 @@ def dec_wrap2():
     p.scfdma_sinc_len_factor = p.scfdma_L
 
     ctrl = SimControls()
-    ctrl.steps = 80 # Approx number of emissions per node
-    ctrl.basephi = 30000 # How many samples between emission
+    #ctrl.steps = 80 # BULK FOR THESIS
+    ctrl.steps = 50 # Approx number of emissions per node
+    #ctrl.basephi = 30000 # BULK FOR THESIS
+    ctrl.basephi = 12000 # How many samples between emission
+    #ctrl.nodecount = 40 # BULK FOR THESUS
+    ctrl.nodecount = 10 # Number of nodes
     ctrl.display = True # Show stuff in the console
-    ctrl.nodecount = 40 # Number of nodes
     ctrl.static_nodes = 0
+    ctrl.quiet_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
-    ctrl.TO_step_wait = 5
-    ctrl.max_start_delay = 10 # In factor of basephi
+    ctrl.TO_step_wait = 2
+    ctrl.max_start_delay = 3 # In factor of basephi
 
     #ctrl.theta_bounds = [0.3,0.7] # In units of phi
     #ctrl.theta_bounds = [0.48,0.52] # In units of phi
@@ -70,7 +74,7 @@ def dec_wrap2():
     ctrl.theta_bounds = [0,1] # In units of phi
     ctrl.deltaf_bound = 3e-2
     #ctrl.deltaf_bound = 0
-    ctrl.rand_init = True
+    ctrl.rand_init = False
     ctrl.epsilon_TO = 0.5
     ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
     #ctrl.noise_power = float('-inf')
@@ -127,6 +131,8 @@ def dec_wrap2():
 #------------------------
 def main_interd():
 
+
+
     #thygraphs.highlited_regimes(); exit()
     #thygraphs.zero_padded_crosscorr(); exit()
     #N = 500
@@ -160,12 +166,11 @@ def main_interd():
     simstr = 'all'
     tsims = sim.total_sims(simstr)
     #dates = sim.simmany(simstr);# dates = [dates[0], dates[-1]]
-    #dates = [20160507165437730, 20160508114538466]
-    alldates = db.fetch_last_n_dates(tsims);
-    #dates = [dates[0], dates[-1]]
-    #alldates = db.fetch_range(sorted_dates, ['date'])
+    #alldates = db.fetch_last_n_dates(tsims);
 
-    lib.options_convergence_analysis(alldates, init_cdict, write=False)
+    # 100test sims
+    alldates = db.fetch_dates([20160624191317863, 20160624214224934])
+    lib.options_convergence_analysis(alldates, init_cdict, write=True)
 
 
     #graphs.time_offset_cdf(dates, savename=''); graphs.show()

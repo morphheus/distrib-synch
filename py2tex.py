@@ -86,6 +86,9 @@ def build_conv_pairs(conv, opts):
         elif ckey=='gl_avg':
             s += 'LA'
             cstr = "%.3f"%cval
+        elif ckey=='gl_std':
+            s += 'LS'
+            cstr = "%.3f"%cval
         elif ckey=='beta_avg':
             s += 'BA'
             cstr = "%.3g"%cval

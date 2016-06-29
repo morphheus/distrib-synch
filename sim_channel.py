@@ -55,7 +55,8 @@ class SimControls(lib.Struct):
         self.non_rand_seed = 1231231
         self.f_carr = 2e9 # Carrier frequency in Hz
         # Node behaviours
-        self.static_nodes = 0 # Static nodes do not adjust
+        self.static_nodes = 0 # Static nodes do not adjust (but they emit)
+        self.quiet_nodes = 0 # quiet nodes do not emit (but they adjust)
         # Echo controls, initialized with no echoes
         self.delay_params = lib.DelayParams(lib.delay_pdf_exp)
         self.pdf_kwargs = dict()
@@ -158,13 +159,7 @@ def runsim(p,ctrl):
     pc_a = ctrl.pc_a
     noise_var = np.sqrt(lib.db2pwr(ctrl.noise_power))
     trans_amp = ctrl.trans_amp
-
-
-    # IF echoes specified, to shove in array. OW, just don't worry about it
-    echo_delay = ctrl.echo_delay
-    echo_amp = ctrl.echo_amp
-    max_echo_taps = ctrl.delay_params.taps
-    
+    max_CFO_correction = ctrl.max_CFO_correction*p.f_symb
     analog_pulse = p.analog_sig
 
     # INPUT EXCEPTIONS
@@ -174,6 +169,8 @@ def runsim(p,ctrl):
         raise AttributeError("Need to run ctrl.update() before calling runsim()")
     if len(analog_pulse) > basephi:
         raise ValueError('Pulse is longer than a sample. Bad stuff will happen')
+    if ctrl.nodecount-ctrl.quiet_nodes < 2:
+        raise AttributeError('Need at least two variable/static nodes')
 
 
     #----------------------
@@ -187,7 +184,7 @@ def runsim(p,ctrl):
     queue_clk = []
     sync_pulse_len = len(analog_pulse)
     offset = int((sync_pulse_len-1)/2)
-    max_sample = chansize-offset-np.max(echo_delay);
+    max_sample = chansize-offset-np.max(ctrl.echo_delay);
 
 
 
@@ -205,15 +202,17 @@ def runsim(p,ctrl):
     prev_TO = np.array([float('inf')]*nodecount, dtype=lib.FLOAT_DTYPE)
     nodes_winlen = np.array([ctrl.chansize]*nodecount, dtype=lib.INT_DTYPE)
     hd_sync_slot = np.array([0 if k%2 else 1 for k in range(nodecount)])
-    nodetype = np.array(['static']*ctrl.static_nodes + ['variable']*(nodecount-ctrl.static_nodes))
+    nodetype = np.array(['stati']*ctrl.static_nodes +
+                        ['quiet']*ctrl.quiet_nodes + 
+                        ['varia']*(nodecount-ctrl.static_nodes-ctrl.quiet_nodes))
     prev_TOx = [collections.deque(np.zeros(len(pc_b)),len(pc_b)) for k in range(nodecount)]
     prev_TOy = [collections.deque(np.zeros(len(pc_a)-1),len(pc_a)-1) for k in range(nodecount)]
     do_pc_step_wait = np.zeros(nodecount)
 
     if ctrl.TO_step_wait > 0:
-        next_event = np.array(['emit' if x=='static' else 'adju' for x in nodetype])
+        next_event = np.array(['emit' if x=='stati' else 'adju' for x in nodetype])
     else:
-        next_event = np.array(['emit']*nodecount)
+        next_event = np.array(['adju' if x=='quiet' else 'emit' for x in nodetype])
 
 
     if ctrl.keep_intermediate_values:
@@ -246,7 +245,7 @@ def runsim(p,ctrl):
     else:
         start_delay = np.zeros(nodecount, dtype=lib.INT_DTYPE)
 
-    # Make sure static nodes are always start by 
+    # Make sure static nodes are always start 
     start_delay[nodetype=='static'] = 0
     channels = lib.cplx_gaussian( [nodecount,chansize], noise_var) 
     
@@ -255,11 +254,21 @@ def runsim(p,ctrl):
         np.random.seed()
 
 
+    # Signal matrix: analog sig including echoes and shit between each nodepair
+    analog_matrix = [ [[] for x in range(nodecount)] for x in range(nodecount)]
 
-    # Correction algorithms variables
-    max_CFO_correction = ctrl.max_CFO_correction*p.f_symb
+    def build_analog_matrix():
+        for node in range(nodecount):
+            for emitclk in range(nodecount):
+                if ctrl.self_emit and emitclk == node: # Skip selfemission
+                    continue
+                sig, rspread=lib.build_multipath_analog(analog_pulse,
+                                                        ctrl.echo_amp[node][emitclk],
+                                                        ctrl.echo_delay[node][emitclk],
+                                                        trans_amp)
+                analog_matrix[node][emitclk] = (sig,rspread)
 
-
+    build_analog_matrix()
 
 
     ####################
@@ -291,14 +300,18 @@ def runsim(p,ctrl):
         add_inter(prev_adjustsample[clk], clk)
         ordered_insert(prev_adjustsample[clk]+first_event,clk) 
 
+    # Make first two nodes broadcast faster. If those nodes are quiet nodes, swap their nodetype
+    # with the latest variable nodes
+    varia_idxs = list(np.where(nodetype=='varia')[0])
+    for node in queue_clk[0:2]:
+        if nodetype[node] != 'stati':
+            wait_emit[node] = ctrl.TO_step_wait
+            next_event[node] = 'emit'
 
-
-
-    # Make first two nodes broadcast faster
-    wait_emit[queue_clk[0]] = ctrl.TO_step_wait
-    wait_emit[queue_clk[1]] = ctrl.TO_step_wait
-    next_event[queue_clk[0]] = 'emit'
-    next_event[queue_clk[1]] = 'emit'
+            if nodetype[node] == 'quiet':
+                switch_node = varia_idxs.pop()
+                nodetype[node] = 'varia'
+                nodetype[switch_node] = 'quiet'
 
 
     # Main loop
@@ -323,26 +336,24 @@ def runsim(p,ctrl):
             for emitclk in range(nodecount):
                 if ctrl.self_emit and emitclk == node: # Skip selfemission
                     continue
-                time_arr = (np.arange(minsample,maxsample) + clk_creation[node] )/p.f_samp 
-                deltaf_arr = np.exp( 2*pi*1j* (deltaf[node] - deltaf[emitclk])  *( time_arr))
 
-                #Echoes management
-                for k in range(max_echo_taps):
-                    curr_amp = echo_amp[node][emitclk][k]*trans_amp
-                    if curr_amp != 0:
-                        to_emit = analog_pulse*deltaf_arr
-                        channels[emitclk, spread + echo_delay[node][emitclk][k]] += to_emit*curr_amp
+                sig, rspread = analog_matrix[node][emitclk]
+                time_arr = (np.arange(minsample,minsample+len(sig)) + clk_creation[node])/p.f_samp 
+                deltaf_arr = np.exp( 2*pi*1j* (deltaf[node] - deltaf[emitclk])  *( time_arr))
+                channels[emitclk, rspread + cursample] += sig*deltaf_arr
 
             # Set next event
-            if nodetype[node] == 'variable':
+            if nodetype[node] == 'varia':
                 wait_til_adjust[node] = math.floor(phi[node]*adjust_frac[node])
                 ordered_insert(wait_til_adjust[node]+cursample, node)
 
-                next_event[node] = 'adjust'
-            elif nodetype[node] == 'static':
+                next_event[node] = 'adju'
+            elif nodetype[node] == 'stati':
                 add_inter(cursample, node)
                 ordered_insert(phi[node]+cursample, node)
                 next_event[node] = 'emit'
+            else:
+                raise Exception('Invalid nodetype for emit: ' + nodetype[node])
 
 
 
@@ -495,8 +506,12 @@ def runsim(p,ctrl):
             if wait_emit[node] < ctrl.TO_step_wait:
                 next_event_sample = (math.ceil(phi[node])\
                                           +cursample+TO).astype(lib.INT_DTYPE)
-                next_event[node] = 'adjust'
+                next_event[node] = 'adju'
                 wait_emit[node] += 1
+            elif nodetype[node] == 'quiet':
+                next_event_sample = (math.ceil(phi[node])\
+                                          +cursample+TO).astype(lib.INT_DTYPE)
+                next_event[node] = 'adju'
             else:
                 next_event_sample = (math.ceil(phi[node]*emit_frac[node])\
                                           +cursample+TO).astype(lib.INT_DTYPE)

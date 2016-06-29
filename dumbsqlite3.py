@@ -477,6 +477,11 @@ def fetch_last_n_dates(n, **kwargs):
     db_out = fetch_last_n(n, [''])
     return [k[0] for k in db_out]
 
+def fetch_dates(dates, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
+    """Grabs all the dates that are between the specified dates tuple (inclusively)"""
+    if len(dates) != 2:
+        raise Exception('Expected length 2 input')
+    return fetch_range(sorted(dates), ['date'], tn=tn, dbase_file=dbase_file, conn=conn)
 
 
 

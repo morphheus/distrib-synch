@@ -492,8 +492,8 @@ def calc_both_barycenters(p,chan, mode='valid' , md_start_idx=0):
 
     
     if p.scfdma_precode:
-        g, _ = md_scfdma_static(g, p.scfdma_pulse, p.scfdma_L)
-        #g, _ = downsample(g, p.scfdma_pulse, p.scfdma_L)
+        #g, _ = md_scfdma_static(g, p.scfdma_pulse, p.scfdma_L)
+        g, _ = downsample(g, p.scfdma_pulse, p.scfdma_L)
         corr_spacing *= p.scfdma_L
     
     # Apply the cross-correlations
@@ -629,6 +629,25 @@ def md_clkphase(signal, pulse, spacing, expected_start_index=0):
 def downsample(signal, pulse, spacing, expected_start_index=0):
     """Simply downsamples the input signal"""
     return signal[expected_start_index::spacing], expected_start_index
+
+def build_multipath_analog(analog_sig, echo_amp, echo_delay, trans_amp):
+    """Builds the sum of the time-delayed signals from multipath"""
+    width = len(analog_sig)
+    offset = int((width-1)/2)
+    spread = range(width)
+
+    norm_delay = echo_delay - min(echo_delay) # Normalized to smallest delay
+
+    total_len = 2*offset + np.max(norm_delay) + 1
+    final_sig = np.zeros(total_len, dtype=analog_sig.dtype)
+
+    for amp, delay in zip(echo_amp, norm_delay):
+        if amp != 0:
+            final_sig[spread+delay] += (analog_sig*amp*trans_amp)
+
+    final_spread = range(-1*offset + min(echo_delay), total_len-offset + min(echo_delay))
+    return final_sig, final_spread
+
 
 #--------------------
 def cfo_mapper_pass(barywidth, p):
@@ -1186,8 +1205,10 @@ def single_set_analysis(alldates, opts):
 
     out = {}
     out['tot'] = len(convlist)
-    out['gl_avg'] = np.array([x['good_link_ratio'] for x in convlist]).mean()
-    out['gl_min'] = np.array([x['good_link_ratio'] for x in convlist]).min()
+    gl = np.array([x['good_link_ratio'] for x in convlist])
+    out['gl_avg'] = gl.mean()
+    out['gl_min'] = gl.min()
+    out['gl_std'] = gl.std()
     out['beta_avg'] = np.array([x['theta_drift_slope_avg'] for x in convlist]).mean()
 
     variances = (np.array([x['theta_drift_slope_std'] for x in convlist])**2).sum()
