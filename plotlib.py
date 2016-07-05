@@ -565,7 +565,6 @@ def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best', 
     # Plot all that juicy data
 
     mark = list('.xov^<>12348sp*hH+,Dd|_')
-
     for data, label in zip(datalist, labels):
         x, y, ystd = lib.avg_copies(data)
         ax = scatter(x, y, ystd, collist[0], collist[1], label=label, fmt='.', marker=mark.pop(0), **kwargs)
@@ -576,8 +575,8 @@ def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best', 
         ax.legend(handles, labels, loc=legendloc, numpoints=1)
 
     # adjust the lims
-    xmin = max(x)
-    xmax = min(x)
+    xmin = min(x)
+    xmax = max(x)
     ymin, ymax = ax.get_ylim()
     tmpy = ymax-ymin
     ymin, ymax = (ymin-0.05*tmpy, ymax+0.05*tmpy)

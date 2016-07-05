@@ -42,7 +42,7 @@ def dec_wrap2():
 
     p.power_weight = 2
     p.full_sim = True
-    p.bias_removal = True
+    p.bias_removal = False
     p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
     p.train_type = 'chain' # Type of training sequence
     p.crosscorr_type = 'match_decimate' 
@@ -55,26 +55,23 @@ def dec_wrap2():
     p.scfdma_sinc_len_factor = p.scfdma_L
 
     ctrl = SimControls()
-    #ctrl.steps = 80 # BULK FOR THESIS
-    ctrl.steps = 50 # Approx number of emissions per node
-    #ctrl.basephi = 30000 # BULK FOR THESIS
-    ctrl.basephi = 12000 # How many samples between emission
-    #ctrl.nodecount = 40 # BULK FOR THESUS
-    ctrl.nodecount = 10 # Number of nodes
+    ctrl.steps = 70 # BULK FOR THESIS
+    #ctrl.steps = 50 # Approx number of emissions per node
+    ctrl.basephi = 30000 # BULK FOR THESIS
+    #ctrl.basephi = 12000 # How many samples between emission
+    ctrl.nodecount = 35 # BULK FOR THESUS
+    #ctrl.nodecount = 10 # Number of nodes
     ctrl.display = True # Show stuff in the console
     ctrl.static_nodes = 0
     ctrl.quiet_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
-    ctrl.TO_step_wait = 2
-    ctrl.max_start_delay = 3 # In factor of basephi
+    ctrl.TO_step_wait = 4
+    ctrl.max_start_delay = 7 # In factor of basephi
 
-    #ctrl.theta_bounds = [0.3,0.7] # In units of phi
-    #ctrl.theta_bounds = [0.48,0.52] # In units of phi
-    #ctrl.theta_bounds = [0.5,0.5] # In units of phi
     ctrl.theta_bounds = [0,1] # In units of phi
     ctrl.deltaf_bound = 3e-2
     #ctrl.deltaf_bound = 0
-    ctrl.rand_init = False
+    ctrl.rand_init = True
     ctrl.epsilon_TO = 0.5
     ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
     #ctrl.noise_power = float('-inf')
@@ -108,14 +105,15 @@ def dec_wrap2():
     ctrl.saveall = True
 
 
-    ncount_lo = 15
-    ncount_hi = 81
-    step = 5
+    ncount_lo = 0
+    ncount_hi = 28+1
+    step = 2
     ntot = math.floor((ncount_hi - ncount_lo - 1)/abs(step))
 
     #cdict = {
-    #    'nodecount':[x for x in range(ncount_lo, ncount_hi,step)]*3
+    #    'quiet_nodes':[x for x in range(ncount_lo, ncount_hi,step)]
     #    }
+    #pdict = {}
     
     cdict = {
         'prop_correction':[False, True , True ,True , True],
@@ -124,7 +122,6 @@ def dec_wrap2():
         'bias_removal':[False, False, True , False, True],
         'scfdma_precode':[False, False, False, True , True]
     }
-    #pdict = {'match_decimate_fct':[lib.md_clkphase]*ntot+[lib.md_energy]*ntot+[lib.md_static]*ntot}
 
     return ctrl, p, cdict, pdict
 
@@ -154,28 +151,29 @@ def main_interd():
     #graphs.delay_pdf(ctrl); graphs.show(); exit()
     #graphs.delay_grid(ctrl); graphs.show(); exit()
     #sim.set_all_nodisp()
-    sim.simulate()
-    sim.post_sim_plots()
-    exit()
+    #sim.simulate()
+    #sim.post_sim_plots()
+    #exit()
 
     sim.set_all_nodisp()
     sim.make_plots = False
-    sim.repeat = 70
+    sim.repeat = 100
     sim.ctrl.rand_init = True
 
     simstr = 'all'
     tsims = sim.total_sims(simstr)
-    #dates = sim.simmany(simstr);# dates = [dates[0], dates[-1]]
+    #sim.simmany(simstr);# dates = [dates[0], dates[-1]]
     #alldates = db.fetch_last_n_dates(tsims);
-
-    # 100test sims
-    alldates = db.fetch_dates([20160624191317863, 20160624214224934])
+    alldates = db.fetch_dates([20160703012947397, 20160704151804280]) # 2k sims july 1 weekend
+    dates = [alldates[0], alldates[-1]]
     lib.options_convergence_analysis(alldates, init_cdict, write=True)
 
 
     #graphs.time_offset_cdf(dates, savename=''); graphs.show()
  
-
+    #graphs.change_fontsize(14)
+    #graphs.scatter_range(dates, ['quiet_nodes', 'good_link_ratio'])
+    #graphs.show()
 
 
 #-----------------------

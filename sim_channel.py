@@ -303,10 +303,13 @@ def runsim(p,ctrl):
     # Make first two nodes broadcast faster. If those nodes are quiet nodes, swap their nodetype
     # with the latest variable nodes
     varia_idxs = list(np.where(nodetype=='varia')[0])
+    varia_idxs = [x for x in varia_idxs if x not in queue_clk[0:2]]
     for node in queue_clk[0:2]:
         if nodetype[node] != 'stati':
             wait_emit[node] = ctrl.TO_step_wait
             next_event[node] = 'emit'
+            theta[node] -= int(round(adjust_frac[node]*phi[node]))
+            theta[node] %= phi[node]
 
             if nodetype[node] == 'quiet':
                 switch_node = varia_idxs.pop()
@@ -353,7 +356,7 @@ def runsim(p,ctrl):
                 ordered_insert(phi[node]+cursample, node)
                 next_event[node] = 'emit'
             else:
-                raise Exception('Invalid nodetype for emit: ' + nodetype[node])
+                raise Exception('Invalid nodetype for emit: ' + nodetype[node] + '. Node '+str(node))
 
 
 
