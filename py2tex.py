@@ -92,7 +92,7 @@ def build_conv_pairs(conv, opts):
         elif ckey=='beta_avg':
             s += 'BA'
             cstr = "%.3g"%cval
-        elif ckey=='beta_std':
+        elif ckey=='beta_var':
             s += 'BS'
             cstr = "%.3g"%cval
         else: raise Exception('Unreconized conv key: ' + ckey)

@@ -400,7 +400,7 @@ def highlited_regimes():
 
     # Draw biarrows
     xmid = 12
-    xmax = ctrl.steps
+    xmax = ctrl.steps-5
     xmin = 0
     ymin, ymax = ax.get_ylim()
     ya = ymin-0.03
@@ -423,6 +423,8 @@ def highlited_regimes():
     fname = 'latex_figures/highlighted_regimes'
     graphs.save(fname)
     graphs.show()
+
+    # Save 
 
 
 

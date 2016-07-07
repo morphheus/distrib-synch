@@ -55,9 +55,9 @@ def dec_wrap2():
     p.scfdma_sinc_len_factor = p.scfdma_L
 
     ctrl = SimControls()
-    ctrl.steps = 70 # BULK FOR THESIS
+    ctrl.steps = 120 # BULK FOR THESIS
     #ctrl.steps = 50 # Approx number of emissions per node
-    ctrl.basephi = 30000 # BULK FOR THESIS
+    ctrl.basephi = 6000 # BULK FOR THESIS
     #ctrl.basephi = 12000 # How many samples between emission
     ctrl.nodecount = 35 # BULK FOR THESUS
     #ctrl.nodecount = 10 # Number of nodes
@@ -68,10 +68,12 @@ def dec_wrap2():
     ctrl.TO_step_wait = 4
     ctrl.max_start_delay = 7 # In factor of basephi
 
+    ctrl.use_ringarr = False
+
     ctrl.theta_bounds = [0,1] # In units of phi
     ctrl.deltaf_bound = 3e-2
     #ctrl.deltaf_bound = 0
-    ctrl.rand_init = True
+    ctrl.rand_init = False
     ctrl.epsilon_TO = 0.5
     ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
     #ctrl.noise_power = float('-inf')
@@ -97,7 +99,7 @@ def dec_wrap2():
 
     ctrl.prop_correction = True
     ctrl.pc_step_wait = 0
-    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(7)
+    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(5)
     ctrl.pc_avg_thresh = float('inf') # If std of N previous TOx samples is above this value, then\
     ctrl.pc_std_thresh = float(80) # If std of N previous TOx samples is above this value, then\
                      # no PC is applied (but TOy is still calculated)
@@ -151,9 +153,9 @@ def main_interd():
     #graphs.delay_pdf(ctrl); graphs.show(); exit()
     #graphs.delay_grid(ctrl); graphs.show(); exit()
     #sim.set_all_nodisp()
-    #sim.simulate()
-    #sim.post_sim_plots()
-    #exit()
+    sim.simulate()
+    sim.post_sim_plots()
+    exit()
 
     sim.set_all_nodisp()
     sim.make_plots = False
@@ -164,20 +166,15 @@ def main_interd():
     tsims = sim.total_sims(simstr)
     #sim.simmany(simstr);# dates = [dates[0], dates[-1]]
     #alldates = db.fetch_last_n_dates(tsims);
+    
     alldates = db.fetch_dates([20160703012947397, 20160704151804280]) # 2k sims july 1 weekend
+    #alldates = db.fetch_dates([20160702173215979, 20160702213538509]) # 600 sims quiet nodes
     dates = [alldates[0], alldates[-1]]
     lib.options_convergence_analysis(alldates, init_cdict, write=True)
 
 
-    #graphs.time_offset_cdf(dates, savename=''); graphs.show()
- 
-    #graphs.change_fontsize(14)
-    #graphs.scatter_range(dates, ['quiet_nodes', 'good_link_ratio'])
-    #graphs.show()
-
-
-#-----------------------
-
+    #graphs.scatter_range(dates, ['quiet_nodes', 'good_link_ratio']); graphs.show()
+    #graphs.scatter_range(dates, ['quiet_nodes', 'theta_drift_slope_std']); graphs.show()
 
 
 class SimWrap(lib.Struct):
@@ -194,6 +191,7 @@ class SimWrap(lib.Struct):
     show_conv = True
     repeat = 1
     last_msg_len = 0
+    conv_min_slope_samples = 20
 
     cdict = dict()
     pdict = dict()
@@ -285,11 +283,11 @@ class SimWrap(lib.Struct):
         # Exec the simulation and save the output
         runsim(self.p, self.ctrl)
 
-        # Fix bias removal opt (it contains numbers)
+        # Fix bias removal opt (it contains numbers, should be a bool)
         if self.ctrl.bias_removal != False:
             self.ctrl.bias_removal = True
         
-        self.ctrl.add(**lib.eval_convergence(self, show_eval_convergence=self.show_conv))
+        self.ctrl.add(**lib.eval_convergence(self, show_eval_convergence=self.show_conv, conv_min_slope_samples=self.conv_min_slope_samples))
         self.ctrl.date = lib.build_timestamp_id();
 
 

@@ -63,7 +63,7 @@ def step_sin(x, a, b, h, k):
     xval = b*(x-h)
     return a*(xval+np.sin(xval)) + k
 
-def cplx_gaussian(shape, noise_variance):
+def cplx_gaussian(shape, noise_variance, dtype=CPLX_DTYPE):
     """Assume jointly gaussian noise. Real and Imaginary parts have
     noise_variance/2 actual variance"""
     """The magnitude of the noise will have a variance of 'noise_variance'"""
@@ -72,7 +72,7 @@ def cplx_gaussian(shape, noise_variance):
         noise_std = (noise_variance/2)**2 # Due to generating a cplx numbarr
         x = (np.random.normal(size=shape, scale=noise_std) + 1j*np.random.normal(size=shape, scale=noise_std)).astype(CPLX_DTYPE)
     else:
-        x = np.array([0+0j]*shape[0]*shape[1], dtype=CPLX_DTYPE).reshape(shape[0],-1)
+        x = np.array([0+0j]*shape[0]*shape[1], dtype=dtype).reshape(shape[0],-1)
     return x
 
 def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE, frac_TO=0):
@@ -1187,7 +1187,6 @@ def single_set_analysis(alldates, opts):
 
     if not match_dates:
         print('No match for \n' + str(opts))
-        exit()
         return ()
 
     conv_collist = ['delay_grid',
@@ -1209,10 +1208,9 @@ def single_set_analysis(alldates, opts):
     out['gl_avg'] = gl.mean()
     out['gl_min'] = gl.min()
     out['gl_std'] = gl.std()
-    out['beta_avg'] = np.array([x['theta_drift_slope_avg'] for x in convlist]).mean()
 
-    variances = (np.array([x['theta_drift_slope_std'] for x in convlist])**2).sum()
-    out['beta_std'] = np.sqrt(variances.mean())
+    out['beta_avg'] = np.square(np.array([x['theta_drift_slope_avg'] for x in convlist])).mean()
+    out['beta_var'] = np.square(np.array([x['theta_drift_slope_std'] for x in convlist])).mean()
 
     return out
 
@@ -1228,14 +1226,14 @@ def eval_convergence(nt,
     #Var declare (simwrap vs dict)
     if type(nt).__name__ == 'SimWrap':
         slist = nt.ctrl.sample_inter
-        tlist = nt.ctrl.theta_inter
+        tlist = nt.ctrl.thetafull_inter
         flist = nt.ctrl.deltaf_inter
         theta = minimize_distance(nt.ctrl.theta, nt.ctrl.basephi)
         prop_delay_grid = nt.ctrl.delay_params.delay_grid
         f_samp = nt.p.f_samp
     else:
         slist = nt['sample_inter']
-        tlist = nt['theta_inter']
+        tlist = nt['thetafull_inter']
         flist = nt['deltaf_inter']
         theta = minimize_distance(nt['theta'], nt['basephi'])
         prop_delay_grid = nt['delay_grid']

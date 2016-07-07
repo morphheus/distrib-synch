@@ -4,6 +4,7 @@
 import lib
 import plotlib as graphs
 from lib import calc_both_barycenters, SyncParams
+from rolarr import RingNdarray
 
 # Python modules
 import numpy as np
@@ -32,6 +33,7 @@ class SimControls(lib.Struct):
 
     def __init__(self):
         """Default values"""
+        self.use_ringarr = False
         self.steps = 30
         self.nodecount = 7
         self.basephi = 2000
@@ -207,6 +209,7 @@ def runsim(p,ctrl):
                         ['varia']*(nodecount-ctrl.static_nodes-ctrl.quiet_nodes))
     prev_TOx = [collections.deque(np.zeros(len(pc_b)),len(pc_b)) for k in range(nodecount)]
     prev_TOy = [collections.deque(np.zeros(len(pc_a)-1),len(pc_a)-1) for k in range(nodecount)]
+    pc_counter = np.zeros(nodecount)
     do_pc_step_wait = np.zeros(nodecount)
 
     if ctrl.TO_step_wait > 0:
@@ -218,6 +221,7 @@ def runsim(p,ctrl):
     if ctrl.keep_intermediate_values:
         sample_inter = [[] for k in range(nodecount)]
         theta_inter = [[] for k in range(nodecount)]
+        thetafull_inter = [[] for k in range(nodecount)]
         phi_inter = [[] for k in range(nodecount)]
         deltaf_inter = [[] for k in range(nodecount)]
 
@@ -247,7 +251,12 @@ def runsim(p,ctrl):
 
     # Make sure static nodes are always start 
     start_delay[nodetype=='static'] = 0
-    channels = lib.cplx_gaussian( [nodecount,chansize], noise_var) 
+
+    initfct = lambda shape: lib.cplx_gaussian(shape, noise_var, dtype=lib.CPLX_DTYPE)
+    if ctrl.use_ringarr:
+        channels = RingNdarray((basephi*4,nodecount), block_init_fct=initfct)
+    else:
+        channels = initfct([chansize, nodecount])
     
 
     if not ctrl.rand_init:
@@ -285,6 +294,7 @@ def runsim(p,ctrl):
         if ctrl.keep_intermediate_values:
             sample_inter[node].append(sample)
             theta_inter[node].append(theta[node])
+            thetafull_inter[node].append(thetafull[node])
             phi_inter[node].append(phi[node])
             deltaf_inter[node].append(deltaf[node])
 
@@ -297,7 +307,6 @@ def runsim(p,ctrl):
         else:
             first_event = phi[clk]
 
-        add_inter(prev_adjustsample[clk], clk)
         ordered_insert(prev_adjustsample[clk]+first_event,clk) 
 
     # Make first two nodes broadcast faster. If those nodes are quiet nodes, swap their nodetype
@@ -308,7 +317,7 @@ def runsim(p,ctrl):
         if nodetype[node] != 'stati':
             wait_emit[node] = ctrl.TO_step_wait
             next_event[node] = 'emit'
-            theta[node] -= int(round(adjust_frac[node]*phi[node]))
+            theta[node] += int(round(emit_frac[node]*phi[node]))
             theta[node] %= phi[node]
 
             if nodetype[node] == 'quiet':
@@ -316,9 +325,11 @@ def runsim(p,ctrl):
                 nodetype[node] = 'varia'
                 nodetype[switch_node] = 'quiet'
 
-
-    # Main loop
-    del clk, sample
+    # Add the clock intial values
+    thetafull = theta.copy()
+    for clk, sample in enumerate(theta):
+        add_inter(prev_adjustsample[clk], clk)
+    
     cursample = queue_sample.pop(0)
     node = queue_clk.pop(0)
     while cursample < max_sample:
@@ -343,7 +354,8 @@ def runsim(p,ctrl):
                 sig, rspread = analog_matrix[node][emitclk]
                 time_arr = (np.arange(minsample,minsample+len(sig)) + clk_creation[node])/p.f_samp 
                 deltaf_arr = np.exp( 2*pi*1j* (deltaf[node] - deltaf[emitclk])  *( time_arr))
-                channels[emitclk, rspread + cursample] += sig*deltaf_arr
+                curslice = slice(rspread.start+cursample, rspread.stop+cursample, rspread.step)
+                channels[curslice, emitclk] += sig*deltaf_arr
 
             # Set next event
             if nodetype[node] == 'varia':
@@ -402,13 +414,13 @@ def runsim(p,ctrl):
 
             # Block channel values when node emitted
             if ctrl.half_duplex and ctrl.hd_block_during_emit and prev_emit_range[node] is not None:
-                channels[node, prev_emit_range[node]] = 0
+                channels[prev_emit_range[node], node] = 0
 
 
             # Obtain barycenters
             if winlen > sync_pulse_len + 1:
                 barycenter_range = range(winmin, winmax)
-                barypos, baryneg, corpos, corneg = p.estimate_bary( channels[node,barycenter_range], md_start_idx=md_static_offset[node])
+                barypos, baryneg, corpos, corneg = p.estimate_bary( channels[barycenter_range, node], md_start_idx=md_static_offset[node])
             else:
                 barypos = winlen - wait_til_adjust[node]
                 baryneg = barypos
@@ -429,20 +441,14 @@ def runsim(p,ctrl):
             TO = round(TO*epsilon_TO)
 
             # Prop delay correction
+            prev_TOx[node].appendleft(TO)
+
             if do_pc_step_wait[node] > ctrl.pc_step_wait and ctrl.prop_correction and wait_emit[node] >= ctrl.TO_step_wait:
-                prev_TOx[node].appendleft(TO)
-                #print(prev_TOx[node])
-                #print(pc_b)
-                #print(prev_TOy[node])
-                #print(pc_a)
-                TOy = (prev_TOx[node]*pc_b).sum() - (prev_TOy*pc_a[1:]).sum()
-                prev_TOy[node].appendleft(TOy)
 
-                
-
-                # Only do if near a steady state
-                #print(np.std(prev_TOx))
-                if np.std(prev_TOx) < ctrl.pc_std_thresh:
+                #print(np.std(prev_TOx[node]))
+                if np.std(prev_TOx[node]) < ctrl.pc_std_thresh:
+                    TOy = (prev_TOx[node]*pc_b).sum() - (prev_TOy*pc_a[1:]).sum()
+                    prev_TOy[node].appendleft(TOy)
                     TO = TOy
                 
             else:
@@ -457,6 +463,7 @@ def runsim(p,ctrl):
                 TO %= phi[node]
 
             theta[node] += TO
+            thetafull[node] += TO
             theta[node] = theta[node] % phi[node]
 
             #prev_TO[node] = TO
@@ -564,6 +571,7 @@ def runsim(p,ctrl):
     if ctrl.keep_intermediate_values:
         ctrl.sample_inter = sample_inter
         ctrl.theta_inter = theta_inter
+        ctrl.thetafull_inter = thetafull_inter
         ctrl.deltaf_inter = deltaf_inter
         ctrl.phi_inter = phi_inter
 
