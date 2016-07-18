@@ -478,7 +478,6 @@ def freq_response(b,a, axes=None, savename=''):
     ax.set_ylabel('Frequency Response')
     return ax
 
-
 #----- CATTED GRAPHS
 def cat_graphs(graphs, rows=2,subplotsize=(9,5), savename=''):
     """Concatenate the figures together together

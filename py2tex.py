@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Writing numbers/values to a latex \variable """
+"""Writing numbers/values to a latex variable """
 
 import numpy as np
 import io
@@ -102,7 +102,4 @@ def build_conv_pairs(conv, opts):
     
     return out
 
-
-if __name__ == '__main__':
-    pass
 

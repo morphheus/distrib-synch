@@ -44,7 +44,6 @@ SOL = 299792458 # Speed of light in m/s
 #--------------------
 def zadoff(u, N,oversampling=1,  q=0):
     """Returns a zadoff-chu sequence"""
-
     x = np.linspace(0, N-1, N*oversampling, dtype='float64')
     return np.exp(-1j*pi*u*x*(x+1+2*q)/N)
 
@@ -153,7 +152,6 @@ def rrcosfilter(N, a, T, f, dtype=CPLX_DTYPE, frac_TO=0):
 
 def scfdma_filter(seq, L, offset):
     """Applies an SC-FDMA modulation"""
-    
     N = len(seq)
     M = L*N
     if offset + N > M:
@@ -647,7 +645,6 @@ def build_multipath_analog(analog_sig, echo_amp, echo_delay, trans_amp):
 
     final_spread = range(-1*offset + min(echo_delay), total_len-offset + min(echo_delay))
     return final_sig, final_spread
-
 
 #--------------------
 def cfo_mapper_pass(barywidth, p):
@@ -1192,6 +1189,7 @@ def single_set_analysis(alldates, opts):
     conv_collist = ['delay_grid',
                     'sample_inter',
                     'theta_inter',
+                    'thetafull_inter',
                     'deltaf_inter',
                     'theta',
                     'f_samp',
@@ -1209,7 +1207,7 @@ def single_set_analysis(alldates, opts):
     out['gl_min'] = gl.min()
     out['gl_std'] = gl.std()
 
-    out['beta_avg'] = np.square(np.array([x['theta_drift_slope_avg'] for x in convlist])).mean()
+    out['beta_avg'] = np.abs(np.array([x['theta_drift_slope_avg'] for x in convlist])).mean()
     out['beta_var'] = np.square(np.array([x['theta_drift_slope_std'] for x in convlist])).mean()
 
     return out

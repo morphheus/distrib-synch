@@ -55,11 +55,11 @@ def dec_wrap2():
     p.scfdma_sinc_len_factor = p.scfdma_L
 
     ctrl = SimControls()
-    ctrl.steps = 120 # BULK FOR THESIS
+    ctrl.steps = 50 # BULK FOR THESIS
     #ctrl.steps = 50 # Approx number of emissions per node
-    ctrl.basephi = 6000 # BULK FOR THESIS
+    ctrl.basephi = 300000 # BULK FOR THESIS
     #ctrl.basephi = 12000 # How many samples between emission
-    ctrl.nodecount = 35 # BULK FOR THESUS
+    ctrl.nodecount = 30 # BULK FOR THESUS
     #ctrl.nodecount = 10 # Number of nodes
     ctrl.display = True # Show stuff in the console
     ctrl.static_nodes = 0
@@ -68,7 +68,7 @@ def dec_wrap2():
     ctrl.TO_step_wait = 4
     ctrl.max_start_delay = 7 # In factor of basephi
 
-    ctrl.use_ringarr = False
+    ctrl.use_ringarr = True
 
     ctrl.theta_bounds = [0,1] # In units of phi
     ctrl.deltaf_bound = 3e-2
@@ -81,7 +81,8 @@ def dec_wrap2():
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_3gpp_exp)
     ctrl.delay_params.taps = 5
-    ctrl.delay_params.max_dist_from_origin = 250 # (in meters)
+    ctrl.delay_params.max_dist_from_origin = 1000 # (in meters)
+    ctrl.delay_params.max_dist_from_origin = 1414 # (in meters)
 
     ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
@@ -95,6 +96,9 @@ def dec_wrap2():
     ctrl.vw_hithreshold = 0.1 # winlen increase threshold
     ctrl.vw_lofactor = 1.5 # winlen reduction factor
     ctrl.vw_hifactor = 2 # winlen increase factor
+
+    ctrl.outage_detect = True
+    ctrl.outage_threshold_noisefactor = 1/(p.zc_len*2)
     
 
     ctrl.prop_correction = True
@@ -107,23 +111,22 @@ def dec_wrap2():
     ctrl.saveall = True
 
 
-    ncount_lo = 0
-    ncount_hi = 28+1
+    ncount_lo = 12
+    ncount_hi = ctrl.nodecount-2+1
     step = 2
     ntot = math.floor((ncount_hi - ncount_lo - 1)/abs(step))
 
-    #cdict = {
-    #    'quiet_nodes':[x for x in range(ncount_lo, ncount_hi,step)]
-    #    }
-    #pdict = {}
-    
     cdict = {
-        'prop_correction':[False, True , True ,True , True],
-    }
-    pdict = {
-        'bias_removal':[False, False, True , False, True],
-        'scfdma_precode':[False, False, False, True , True]
-    }
+        'quiet_nodes':[x for x in range(ncount_lo, ncount_hi,step)]
+        }
+    pdict = {}
+    
+    #cdict = {
+    #    'prop_correction':[False, True , True ],
+    #}
+    #pdict = {
+    #    'scfdma_precode':[False, False, True ]
+    #}
 
     return ctrl, p, cdict, pdict
 
@@ -153,28 +156,31 @@ def main_interd():
     #graphs.delay_pdf(ctrl); graphs.show(); exit()
     #graphs.delay_grid(ctrl); graphs.show(); exit()
     #sim.set_all_nodisp()
-    sim.simulate()
-    sim.post_sim_plots()
-    exit()
+    #sim.conv_offset_limits = [x*4 for x in sim.conv_offset_limits]
+    #sim.simulate()
+    #sim.post_sim_plots()
+    #exit()
 
     sim.set_all_nodisp()
     sim.make_plots = False
-    sim.repeat = 100
+    sim.repeat = 60
     sim.ctrl.rand_init = True
 
     simstr = 'all'
     tsims = sim.total_sims(simstr)
-    #sim.simmany(simstr);# dates = [dates[0], dates[-1]]
-    #alldates = db.fetch_last_n_dates(tsims);
+    sim.simmany(simstr);# dates = [dates[0], dates[-1]]
+    alldates = db.fetch_last_n_dates(tsims);
     
-    alldates = db.fetch_dates([20160703012947397, 20160704151804280]) # 2k sims july 1 weekend
-    #alldates = db.fetch_dates([20160702173215979, 20160702213538509]) # 600 sims quiet nodes
+    #alldates = db.fetch_dates([20160706225110538, 20160707065213689]) # 2k sims july 06 
+    #alldates = db.fetch_dates([20160716122731390, 20160715204752242]) # 900sim quiet nodes
     dates = [alldates[0], alldates[-1]]
-    lib.options_convergence_analysis(alldates, init_cdict, write=True)
+
+    #lib.options_convergence_analysis(alldates, init_cdict, write=True)
 
 
-    #graphs.scatter_range(dates, ['quiet_nodes', 'good_link_ratio']); graphs.show()
+    graphs.scatter_range(dates, ['quiet_nodes', 'good_link_ratio']); graphs.show()
     #graphs.scatter_range(dates, ['quiet_nodes', 'theta_drift_slope_std']); graphs.show()
+    #graphs.scatter_range(dates, ['quiet_nodes', 'theta_ssstd']); graphs.show()
 
 
 class SimWrap(lib.Struct):
@@ -192,12 +198,10 @@ class SimWrap(lib.Struct):
     repeat = 1
     last_msg_len = 0
     conv_min_slope_samples = 20
+    conv_offset_limits = [-3.4, 1.8]
 
     cdict = dict()
     pdict = dict()
-
-    
-
 
     def __init__(self, ctrl, p, cdict=None, pdict=None, prep_bary=False):
         """Prepares ctrl & p for simulation"""
@@ -287,7 +291,8 @@ class SimWrap(lib.Struct):
         if self.ctrl.bias_removal != False:
             self.ctrl.bias_removal = True
         
-        self.ctrl.add(**lib.eval_convergence(self, show_eval_convergence=self.show_conv, conv_min_slope_samples=self.conv_min_slope_samples))
+        
+        self.ctrl.add(**lib.eval_convergence(self, show_eval_convergence=self.show_conv, conv_min_slope_samples=self.conv_min_slope_samples, conv_offset_limits=self.conv_offset_limits))
         self.ctrl.date = lib.build_timestamp_id();
 
 
@@ -301,6 +306,8 @@ class SimWrap(lib.Struct):
         
         if self.show_elapsed:
             print('Elapsed: ' + "%2.2f"%(tf()-t0) + ' seconds.')
+
+        return self.ctrl.date
 
     def simmany(self, assign_method='all'):
         """Simulates many simulations according to the simdicts"""
@@ -326,6 +333,7 @@ class SimWrap(lib.Struct):
         tsims = self.total_sims(assign_method)
         count = 0
         t0 = tf()
+        dates = []
 
         # Main loop
         while next(assign_fct()):
@@ -335,13 +343,14 @@ class SimWrap(lib.Struct):
                 msg += "%2.2f"%(count*100/tsims) + "% done -- avg time:" +  "%2.2f"%avg_time + ' sec/iteration'
                 oprint(msg)
                 self.ctrl.update()
-                self.simulate()
+                curdate = self.simulate()
+                dates.append(curdate)
                 count += 1
         oprint(' '*len(msg))
         print('Done simmany in ' + "%2.2f"%(tf()-t0) + ' seconds.')
 
         # Logging the dateid set
-        dates = np.array(db.fetch_last_n_dates(tsims)).flatten()
+        dates = np.array(dates)
         lib.appendlog('Done ' + str(tsims) + ' simulations: ' +\
                       str(dates[-1]) + ' to ' + str(dates[0]))
 

@@ -89,6 +89,9 @@ class SimControls(lib.Struct):
         self.pc_b, self.pc_a = lib.hipass_avg(5)
         self.pc_std_thresh = float('inf')
         self.pc_avg_thresh = float('inf')
+        # Outage detection
+        self.outage_detect = False
+        self.outage_threshold_noisefactor = 0 # Factor of noise amplitude to threhsold outage
 
         # Other
         self.init_update = True
@@ -106,6 +109,7 @@ class SimControls(lib.Struct):
         self.phi_minmax = [round(x*self.basephi) for x in self.phi_bounds]
         self.theta_minmax = [round(x*self.basephi) for x in self.theta_bounds]
 
+        # Non-random init (if needed) of multipath stuff
         if not self.rand_init:
             np.random.seed(self.non_rand_seed)
 
@@ -113,11 +117,12 @@ class SimControls(lib.Struct):
 
         if not self.rand_init:
             np.random.seed()
-        
+
         # Input protection
         val_within_bounds(self.max_start_delay, [0,float('inf')] , 'max_start_delay')
         val_within_bounds(self.hd_slot0, [0,1] , 'hd_slot0')
         val_within_bounds(self.hd_slot1, [0,1] , 'hd_slot1')
+
         
         self.init_update = True
 
@@ -159,7 +164,7 @@ def runsim(p,ctrl):
     theta_minmax = ctrl.theta_minmax
     pc_b = ctrl.pc_b
     pc_a = ctrl.pc_a
-    noise_var = np.sqrt(lib.db2pwr(ctrl.noise_power))
+    noise_var = lib.db2pwr(ctrl.noise_power)
     trans_amp = ctrl.trans_amp
     max_CFO_correction = ctrl.max_CFO_correction*p.f_symb
     analog_pulse = p.analog_sig
@@ -187,6 +192,7 @@ def runsim(p,ctrl):
     sync_pulse_len = len(analog_pulse)
     offset = int((sync_pulse_len-1)/2)
     max_sample = chansize-offset-np.max(ctrl.echo_delay);
+    outage_threshold = ctrl.outage_threshold_noisefactor * np.sqrt(noise_var)
 
 
 
@@ -252,13 +258,13 @@ def runsim(p,ctrl):
     # Make sure static nodes are always start 
     start_delay[nodetype=='static'] = 0
 
+    # Initialize the channel array with noise
     initfct = lambda shape: lib.cplx_gaussian(shape, noise_var, dtype=lib.CPLX_DTYPE)
     if ctrl.use_ringarr:
-        channels = RingNdarray((basephi*4,nodecount), block_init_fct=initfct)
+        channels = RingNdarray((basephi*2,nodecount), block_init_fct=initfct, block_count=5)
     else:
         channels = initfct([chansize, nodecount])
     
-
     if not ctrl.rand_init:
         np.random.seed()
 
@@ -440,6 +446,12 @@ def runsim(p,ctrl):
             # Apply epsilon
             TO = round(TO*epsilon_TO)
 
+            # Outage detection
+            if ctrl.outage_detect:
+                crosscorr_avgmax = 0.5*( corpos.max()+corneg.max() )
+                if crosscorr_avgmax < outage_threshold:
+                    TO = 0
+            
             # Prop delay correction
             prev_TOx[node].appendleft(TO)
 
