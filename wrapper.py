@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Channel simulation wrapper, to be executed directly in a terminal"""
+"""Channel simulation wrapper. contains the SimWrap object to handle multi-iretation of potentially different starting values."""
 
 import dumbsqlite3 as db
 import plotlib as graphs
@@ -31,7 +31,7 @@ NOSAVELIST = [
 def dec_wrap2():
     """Single ZC sequence with Decimation"""
     p = lib.SyncParams()
-    p.zc_len = 32
+    p.zc_len = 31
     p.plen = 31
 
     p.rolloff = 0.2
@@ -55,11 +55,11 @@ def dec_wrap2():
     p.scfdma_sinc_len_factor = p.scfdma_L
 
     ctrl = SimControls()
-    ctrl.steps = 50 # BULK FOR THESIS
+    ctrl.steps = 120 # BULK FOR THESIS
     #ctrl.steps = 50 # Approx number of emissions per node
-    ctrl.basephi = 300000 # BULK FOR THESIS
+    ctrl.basephi = 40000 # BULK FOR THESIS
     #ctrl.basephi = 12000 # How many samples between emission
-    ctrl.nodecount = 30 # BULK FOR THESUS
+    ctrl.nodecount = 40 # BULK FOR THESUS
     #ctrl.nodecount = 10 # Number of nodes
     ctrl.display = True # Show stuff in the console
     ctrl.static_nodes = 0
@@ -81,8 +81,8 @@ def dec_wrap2():
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_3gpp_exp)
     ctrl.delay_params.taps = 5
-    ctrl.delay_params.max_dist_from_origin = 1000 # (in meters)
-    ctrl.delay_params.max_dist_from_origin = 1414 # (in meters)
+    ctrl.delay_params.max_dist_from_origin = 500 # (in meters)
+    #ctrl.delay_params.max_dist_from_origin = 1000 # (in meters)
 
     ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
@@ -97,13 +97,13 @@ def dec_wrap2():
     ctrl.vw_lofactor = 1.5 # winlen reduction factor
     ctrl.vw_hifactor = 2 # winlen increase factor
 
-    ctrl.outage_detect = True
-    ctrl.outage_threshold_noisefactor = 1/(p.zc_len*2)
+    ctrl.outage_detect = False
+    ctrl.outage_threshold_noisefactor = 1/(p.zc_len)
     
 
     ctrl.prop_correction = True
     ctrl.pc_step_wait = 0
-    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(5)
+    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(6)
     ctrl.pc_avg_thresh = float('inf') # If std of N previous TOx samples is above this value, then\
     ctrl.pc_std_thresh = float(80) # If std of N previous TOx samples is above this value, then\
                      # no PC is applied (but TOy is still calculated)
@@ -116,46 +116,28 @@ def dec_wrap2():
     step = 2
     ntot = math.floor((ncount_hi - ncount_lo - 1)/abs(step))
 
-    cdict = {
-        'quiet_nodes':[x for x in range(ncount_lo, ncount_hi,step)]
-        }
-    pdict = {}
-    
     #cdict = {
-    #    'prop_correction':[False, True , True ],
-    #}
-    #pdict = {
-    #    'scfdma_precode':[False, False, True ]
-    #}
+    #    'quiet_nodes':[x for x in range(ncount_lo, ncount_hi,step)]
+    #    }
+    #pdict = {}
+    
+    cdict = {
+        'prop_correction':[False, True , True ],
+    }
+    pdict = {
+        'scfdma_precode':[False, False, True ]
+    }
 
     return ctrl, p, cdict, pdict
 
 #------------------------
-def main_interd():
+def main():
 
-
-
-    #thygraphs.highlited_regimes(); exit()
-    #thygraphs.zero_padded_crosscorr(); exit()
-    #N = 500
-    #data = np.random.normal(size=(3,N))
-    #data[2,:] = np.random.random(size=N)
-
-    #x, y = lib.build_cdf(data)
-    #graphs.continuous(x, y); graphs.show()
-    #exit()
 
     ctrl, p, cdict, pdict = dec_wrap2()
     init_cdict = {**cdict, **pdict}
     sim = SimWrap(ctrl, p, cdict, pdict)
 
-
-    #print(lib.thy_ssstd(ctrl))
-    #graphs.freq_response(ctrl.pc_b, ctrl.pc_a); graphs.show(); exit()
-    #graphs.crosscorr(p); graphs.show(); exit()
-    #graphs.delay_pdf(ctrl); graphs.show(); exit()
-    #graphs.delay_grid(ctrl); graphs.show(); exit()
-    #sim.set_all_nodisp()
     #sim.conv_offset_limits = [x*4 for x in sim.conv_offset_limits]
     #sim.simulate()
     #sim.post_sim_plots()
@@ -163,28 +145,30 @@ def main_interd():
 
     sim.set_all_nodisp()
     sim.make_plots = False
-    sim.repeat = 60
+    sim.repeat = 500
     sim.ctrl.rand_init = True
 
     simstr = 'all'
     tsims = sim.total_sims(simstr)
-    sim.simmany(simstr);# dates = [dates[0], dates[-1]]
-    alldates = db.fetch_last_n_dates(tsims);
+    #sim.simmany(simstr);# dates = [dates[0], dates[-1]]
+    #alldates = db.fetch_last_n_dates(tsims);
+
     
-    #alldates = db.fetch_dates([20160706225110538, 20160707065213689]) # 2k sims july 06 
-    #alldates = db.fetch_dates([20160716122731390, 20160715204752242]) # 900sim quiet nodes
-    dates = [alldates[0], alldates[-1]]
+    alldates = db.fetch_dates([20160723012902720, 20160724030205810]) # 4.5k sims july 24 
+    #alldates = db.fetch_dates([20160716122731390, 20160715204752242]) # 900sim quiet 1km
+    #alldates = db.fetch_dates([20160718215702723, 20160718114958378]) # 540sim quiet 1.414 km
+    #dates = [alldates[0], alldates[-1]]
 
-    #lib.options_convergence_analysis(alldates, init_cdict, write=True)
+    lib.options_convergence_analysis(alldates, init_cdict, write=True)
 
 
-    graphs.scatter_range(dates, ['quiet_nodes', 'good_link_ratio']); graphs.show()
+    #graphs.scatter_range(dates, ['quiet_nodes', 'good_link_ratio']); graphs.show()
     #graphs.scatter_range(dates, ['quiet_nodes', 'theta_drift_slope_std']); graphs.show()
     #graphs.scatter_range(dates, ['quiet_nodes', 'theta_ssstd']); graphs.show()
 
 
 class SimWrap(lib.Struct):
-    """Simulation object for ease of use"""
+    """Simulation object that handles multi-iteration of runsim(). Also dumps results to disc if needed."""
 
     force_calculate = False # Forces the update of all values before starting the simulation
     #make_plots = True
@@ -291,10 +275,8 @@ class SimWrap(lib.Struct):
         if self.ctrl.bias_removal != False:
             self.ctrl.bias_removal = True
         
-        
         self.ctrl.add(**lib.eval_convergence(self, show_eval_convergence=self.show_conv, conv_min_slope_samples=self.conv_min_slope_samples, conv_offset_limits=self.conv_offset_limits))
         self.ctrl.date = lib.build_timestamp_id();
-
 
         savedict = self.ctrl.__dict__.copy()
         savedict['delay_grid'] = self.ctrl.delay_params.delay_grid
@@ -303,7 +285,6 @@ class SimWrap(lib.Struct):
         
         db.add(savedict)
 
-        
         if self.show_elapsed:
             print('Elapsed: ' + "%2.2f"%(tf()-t0) + ' seconds.')
 
@@ -335,7 +316,7 @@ class SimWrap(lib.Struct):
         t0 = tf()
         dates = []
 
-        # Main loop
+        # Main sim loop
         while next(assign_fct()):
             for k in range(self.repeat):
                 avg_time = (tf()-t0)/count if count!=0 else 0
@@ -352,7 +333,7 @@ class SimWrap(lib.Struct):
         # Logging the dateid set
         dates = np.array(dates)
         lib.appendlog('Done ' + str(tsims) + ' simulations: ' +\
-                      str(dates[-1]) + ' to ' + str(dates[0]))
+                      str(dates[0]) + ' to ' + str(dates[-1]))
 
         return dates
 
@@ -385,7 +366,7 @@ class SimWrap(lib.Struct):
         """Makes a generator of both ctrl and p. It iterates through cdict and pdict
         one item at a time
 
-        Note: Shorter lists are deleted when done. THe concerned variable will keep that final value
+        Note: Shorter lists are deleted when done. Concerned variables will keep that final value
         for future iteration"""
         while self.cdict or self.pdict:
             for d, obj in zip([self.cdict, self.pdict], [self.ctrl, self.p]):
@@ -400,7 +381,6 @@ class SimWrap(lib.Struct):
                         todel.append(key)
                 for key in todel: 
                     del d[key]
-            
 
         yield False # When both dicts are empty,  return false.
 
@@ -427,30 +407,7 @@ class SimWrap(lib.Struct):
         return count*self.repeat
 
 
-    
 
 if __name__ == '__main__':
-    main_interd()
-    #main_thesis()
+    main()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    #  LocalWords:  avgwindow

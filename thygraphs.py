@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+"""Particular graphs, either static or obtained via specific inputs provided to sim_channel.runsim()"""
 import lib
 import plotlib as graphs
 import numpy as np
@@ -8,10 +8,7 @@ from sim_channel import SimControls
 
 from numpy import pi
 
-
-
 OUTPUT_FOLDER = 'graphs/latex_figures/' # Don't forget the theta_rangeailing slash
-
 
 def ml_pinit():
     """Discrete non pulse-shaped sequence"""

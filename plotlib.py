@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+"""Library of plotting tools, used by the user or plotwrap.py"""
 
 from sim_channel import SimControls
 from lib import barywidth_map, calc_both_barycenters

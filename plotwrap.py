@@ -1,12 +1,9 @@
 #!/usr/bin/env python
-
+"""Build multiple graphs found in plotlib"""
 import lib
 import plotlib as graphs
 
-
-
 OUTPUT_FOLDER = 'graphs/latex_figures/' # Don't forget the trailing slash
-
 
 #------------------------------
 def discrete0_pinit():

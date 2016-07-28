@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Simple and easy way to shove data into a single SQL table."""
+"""Simple and easy way to shove data into a single SQLite table."""
 
 import numpy as np
 import time
@@ -9,7 +9,6 @@ import inspect
 import types
 import lib
 
-
 # Default values
 DEF_TABLE = 'sim_results'
 DEF_DB = 'simdb.sqlite'
@@ -17,16 +16,6 @@ DEF_ASSOC_TABLE = 'type_assoc'
 
 __PRIMARY = 'date'
 __PRIMARY_TYPE = 'INTEGER'
-
-
-
-
-#----------------------
-def set_table(table):
-    if type(table).__name__ == 'str':
-        DEF_TABLE = table
-    else:
-        raise TypeError('Tablename must be a string')
 
 
 #---------------------------
@@ -220,7 +209,6 @@ def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
         conn = connect(dbase_file)
         closeconn = True
 
-
     c = conn.cursor()
     cursor = c.execute('select * from ' + tn)
     dbcols = [x[0] for x in cursor.description]
@@ -266,14 +254,24 @@ def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
         collist.append(cn)
         vallist.append(val)
 
-    c.execute("INSERT INTO {} ({}) VALUES ({})".format(tn, __PRIMARY, data[__PRIMARY]))
-    for k in range(len(collist)):
+    def thing_that_goes_wrong():
+        c.execute("INSERT INTO {} ({}) VALUES ({})".format(tn, __PRIMARY, data[__PRIMARY]))
+        for k in range(len(collist)):
+            try:
+                c.execute("UPDATE {} SET {}=(?) WHERE date={}".format(tn, collist[k], data[__PRIMARY])\
+                        , (vallist[k],))
+            except sqlite3.InterfaceError as e:
+                raise type(e)('Error on ' + str(collist[k]) + ' with value ' + str(vallist[k]))
+
+    #In the very rare case of collision, we pick another timestamp ID.
+    done = False
+    while not done:
         try:
-            c.execute("UPDATE {} SET {}=(?) WHERE date={}".format(tn, collist[k], data[__PRIMARY])\
-                    , (vallist[k],))
-        except sqlite3.InterfaceError as e:
-            raise type(e)('Error on ' + str(collist[k]) + ' with value ' + str(vallist[k]))
-            
+            thing_that_goes_wrong()
+            done = True
+        except sqlite3.IntegrityError:
+            data[__PRIMARY] = build_timestamp_id() # Propagates in parent namespace
+
     conn.commit()
 
     if close_conn:

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+"""Library of math functions, probability density functions, drop initializations, etc., that may be shared among various components of the simulation."""
 import numpy as np
 import collections
 import bisect
@@ -1313,7 +1314,7 @@ class Struct:
             yield name, val
 
 class DelayParams(Struct):
-    """Parameters class for the delays between nodes"""
+    """Parameters class for the delays between nodes. Contains all parameters and build functions."""
     def __init__(self, delay_pdf,
                  taps=1,
                  max_dist_from_origin=0):
@@ -1385,7 +1386,7 @@ class DelayParams(Struct):
         return echoes['delay'], echoes['amp']
 
 class SyncParams(Struct):
-    """Parameter struct containing all the parameters used for the simulation, from the generation of the modulated training sequence to the exponent of the cross-correlation"""
+    """Parameter struct containing all the parameters used for the synchronization sequences, including build commands."""
 
     def __init__(self):
         self.add(plen=101) # Note: must be odd
