@@ -18,6 +18,7 @@ from pprint import pprint
 from scipy import signal
 from scipy.signal import fftconvolve
 from scipy.optimize import curve_fit, leastsq
+from jenks import jenks
 
 import dumbsqlite3 as db
 import py2tex
@@ -331,6 +332,9 @@ def d_to_a(values, pulse, spacing,dtype=CPLX_DTYPE):
         idx += spacing
 
     return output
+
+def reduce_square_matrix(x, indexes):
+    """Returns view of a square matrix reduced the the row/column pairs specified in indexes"""
 
 #--------------------
 def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=False):
@@ -1221,7 +1225,6 @@ def eval_convergence(nt,
     contains most fields a sim object would contain"""
 
     conv_eval_cfo = False # always false
-
     #Var declare (simwrap vs dict)
     if type(nt).__name__ == 'SimWrap':
         slist = nt.ctrl.sample_inter
@@ -1275,29 +1278,102 @@ def eval_convergence(nt,
     output['theta_drift_slope_std'] = theta_std
     output['theta_drift_slope_unit'] = theta_slope_unit
 
-
     if conv_eval_cfo:
         output['deltaf_drift_slope_avg'], output['deltaf_drift_slope_std'] = drift_eval(slist, flist)
 
-    # Evaluate communication capabilites between all nodes 
-    N = theta.shape[0]
-    offset_grid = build_diff_grid(theta) -1*prop_delay_grid
-    linkcount =  (N**2 - N)
+    def good_link_eval(x, adjusted_propagation_delay_grid):
+        N = x.shape[0]
+        if N==1:
+            return float('NaN')
 
+        offset_grid = build_diff_grid(x) -1*adjusted_propagation_delay_grid
+        linkcount =  (N**2 - N)
 
-    lo, hi = [k*1e-6*f_samp for k in conv_offset_limits]
-    good_links = ((offset_grid>lo) & (offset_grid<hi)).sum() - N
+        lo, hi = [k*1e-6*f_samp for k in conv_offset_limits]
+        good_links = ((offset_grid>lo) & (offset_grid<hi)).sum() - N
+        return good_links/linkcount
 
-    output['good_link_ratio'] = good_links/linkcount
+    # Overall GL ratio
+    output['good_link_ratio'] = good_link_eval(theta, prop_delay_grid)
+    
+    # intra-cluster GL ratio
+    theta_klist, idx_klist, kcount = cluster_1d(theta)
+    cluster_good_link = []
+    for cluster, cluster_indexes in zip(theta_klist, idx_klist):
+        tmp = np.tile(cluster_indexes,(len(cluster_indexes),1))
+        cluster_good_link.append(good_link_eval(cluster, prop_delay_grid[tmp.T,tmp]))
+
+    cluster_good_link = np.array([x for x in cluster_good_link if not math.isnan(x)])
+    output['cluster_count'] = kcount
+    output['clister_count_single'] = kcount-len(cluster_good_link)
+    output['cluster_avg_goodlink'] = np.mean(cluster_good_link)
+    output['cluster_std_goodlink'] = np.std(cluster_good_link)
 
     if show_eval_convergence:
         for key, item in sorted(output.items()):
             print(key + ": " + str(item))
 
     # Add things that are not going to be printed by nt.show_eval_convergence
+    output['idx_klist'] = idx_klist
+    output['cluster_goodlink_nonsingle'] = cluster_good_link
     output['conv_offset_limit'] = conv_offset_limits
 
     return output
+
+
+#----------------------
+def cluster_1d_known_kcount(data, kcount):
+    """Clusters 1d data array and returns the list of clusters, according to the jenks algorithm
+    data: array of 1d integers
+    output: list of lists, where each sublist corresponds to one cluster, and contains the indexes of the values corresponding to the clusters
+    """
+    N = len(data)
+    sorted_datapairs = sorted([(data[idx], idx) for idx in range(N)])
+    sorted_data, sorted_idx = zip(*sorted_datapairs)
+
+    # Perform clusterin algorithm and find the associated indexes
+    bounds_data = [round(int(x)) for x in jenks(data,kcount)]
+    bounds_idx = [sorted_data.index(x) for x in bounds_data]
+
+    # Build the list of clustered indexes
+    bounds_idx[0] -= 1 # The first lower bound is inclusive, unlike the other lower bounds
+    idx_klist = []
+    for k in range(kcount):
+        curslice = slice(bounds_idx[k]+1,bounds_idx[k+1]+1)
+        idx_klist.append(np.array(sorted_idx[curslice]))
+    
+    return(idx_klist)
+
+def find_numcluster_1d(data, normalization_factor=1, apply_norm=True):
+    """picks out the number of clusters by clustering the distances between the points"""
+    if not (0< normalization_factor):
+        raise Exception( str(normalization_factor) + ' is an invalid normalization factor')
+    
+    dists = np.empty_like(data)
+    sdata = data.copy()
+    sdata.sort()
+
+    dists[1:] = sdata[1:] - sdata[:-1]
+    dists[0] = sdata[-1] - sdata[0]
+
+    if apply_norm:
+        ndists = dists + dists.max()*normalization_factor # Normalized distance
+        ndists = (np.log(ndists)*100).astype(INT_DTYPE)
+    else:
+        ndists = dists
+    dist_klist = cluster_1d_known_kcount(ndists, 2)
+
+    return len(dist_klist[1])
+
+def cluster_1d(data):
+    """Applies the clustering algorithm on the data, then performs the clustering analyssi"""
+    kcount = find_numcluster_1d(data)
+    idx_klist = cluster_1d_known_kcount(data, kcount)
+    val_klist = [data[sublist] for sublist in idx_klist]
+    return val_klist, idx_klist, kcount
+
+
+
 
 
 

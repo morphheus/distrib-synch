@@ -9,6 +9,7 @@ import dumbsqlite3 as db
 import math
 import warnings
 import numpy as np
+import itertools
 from scipy import signal
 from numpy import pi
 
@@ -148,45 +149,77 @@ def change_fontsize(fsize):
     matplotlib.rcParams.update({'font.size': fsize})
 
 #----- GRAPHS
-def post_sim_graphs(simwrap, save_TO='lastTO', save_CFO='lastCFO'):
+def hair(samples, param, basephi, y_label='Parameter', axes=None, savename=''):
+    """Plots an evolution graph of the parameter of"""
+    # samples: sample_inter output from the simulation
+    # Param:  <param>_inter output from the simulation
+    if axes==None:
+        ax = plt.axes()
+    else:
+        ax = axes
+
+    for slist, plist in zip(samples,param):
+        x = np.array(slist)/basephi
+        y = np.array(plist)/basephi
+        ax.plot(x,y, 'k-')
+
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    tmp = ymax-ymin
+    ymin, ymax = (ymin-0.05*tmp, ymax+0.05*tmp)
+
+    ax.set_ylim([ymin,ymax])
+    #ax.set_xlim([xmin,xmax])
+    ax.set_xlabel('Time ($T_0$)')
+    ax.set_ylabel(y_label)
+
+    save(savename)
+    return ax
+
+def post_sim_graphs(simwrap, save_TO='lastTO', save_CFO='lastCFO', save_grid='lastGRID', save_cat='lastCAT'):
     """Graphs to output at the end of a simulation"""
 
-    def hair(samples,param, y_label='Parameter', savename=''):
-        """Plots an evolution graph of the parameter of"""
-        # samples: sample_inter output from the simulation
-        # Param:  <param>_inter output from the simulation
+    ctrl = simwrap.ctrl
+    axlist = []
 
-        fh = plt.figure()
-        ax = plt.axes()
-        for slist, plist in zip(samples,param):
-            x = np.array(slist)/simwrap.ctrl.basephi
-            y = np.array(plist)/simwrap.ctrl.basephi
-            ax.plot(x,y, 'k-')
-
-        xmin, xmax = ax.get_xlim()
-        ymin, ymax = ax.get_ylim()
-        tmp = ymax-ymin
-        ymin, ymax = (ymin-0.05*tmp, ymax+0.05*tmp)
-
-        ax.set_ylim([ymin,ymax])
-        #ax.set_xlim([xmin,xmax])
-        ax.set_xlabel('Time ($T_0$)')
-        ax.set_ylabel(y_label)
-
-        save(savename)
-        return ax
+    graphs = [
+        (
+            hair,
+            (ctrl.sample_inter , ctrl.deltaf_inter, ctrl.basephi),
+            {'y_label':'CFO (\Delta\lambda)', 'savename':save_CFO},
+            'deltaf evolution'
+        ),(
+            hair,
+            (ctrl.sample_inter , ctrl.theta_inter, ctrl.basephi),
+            {'y_label':r'$\theta_i$ $(T_0)$', 'savename':save_TO,},
+            'Phase evolution'
+        ),(
+            delay_grid_clusters,
+            (ctrl,),
+            {'savename':save_grid},
+            'Nodes positions and clustering'
+        )
+    ]
+    
+    makelist = [simwrap.make_CFO, simwrap.make_TO, simwrap.make_grid]
+    showlist = [simwrap.show_CFO, simwrap.show_TO, simwrap.show_grid]
 
     
-    ctrl = simwrap.ctrl
-    # CFO graph
-    ax_CFO = hair(ctrl.sample_inter , ctrl.deltaf_inter , y_label='CFO (\Delta\lambda)', savename=save_CFO);
-    if simwrap.show_CFO: show()
-    else: plt.close(plt.gcf())
+    for tmp, show_graph in zip(graphs, showlist):
+        tmp[0](*tmp[1], **tmp[2])
+        if show_graph: show()
+        else: plt.close(plt.gcf())
 
-    # TO graphs
-    ax_TO = hair(ctrl.sample_inter, ctrl.theta_inter , y_label=r'$\theta_i$ $(T_0)$', savename=save_TO); 
-    if simwrap.show_TO: show()
-    return ax_TO, ax_CFO
+    # Prune graphs
+    graphs = [x for x,y in zip(graphs, makelist) if y]
+
+    # Make catted
+    if simwrap.make_cat:
+        cat_graphs(graphs, savename=save_cat)
+        if simwrap.show_cat: show()
+        else: plt.close(plt.gcf)
+
+    return None
 
 def barywidth(*args, axes=None, savename='', fit_type='order2', residuals=True, disp=True, **kwargs):
     """Accepts either a SyncParams() object or two iterables representing the CFO and the barywidth"""
@@ -429,7 +462,7 @@ def delay_pdf(ctrl, axes=None, savename=''):
     return ax
 
 def delay_grid(ctrl, unit='km', axes=None, savename=''):
-    """Plots the PDF of the ctrl structure"""
+    """Plots the map of the nodes"""
     obj = ctrl.delay_params
     fct = obj.delay_pdf_eval
 
@@ -441,6 +474,33 @@ def delay_grid(ctrl, unit='km', axes=None, savename=''):
     lims = [lib.samples2dist(k, ctrl.f_samp, unit) for k in lims]
 
     ax = scatter_noerr(x,y,axes=axes)
+    ax.set_xlabel('x-axis (' + unit + ')')
+    ax.set_ylabel('y-axis (' + unit + ')')
+    ax.set_xlim(lims)
+    ax.set_ylim(lims)
+    return ax
+
+def delay_grid_clusters(ctrl, unit='km', axes=None, savename=''):
+    """Plots the map of the nodes with clusters coloring"""
+    obj = ctrl.delay_params
+    fct = obj.delay_pdf_eval
+
+    x,y = [k for k in [obj.gridx, obj.gridy]]
+    lims = [sign*0.55*obj.width for sign in [-1,1]]
+
+    # convert to requested unit
+    x,y = [lib.samples2dist(k, ctrl.f_samp, unit) for k in [x,y]]
+    lims = [lib.samples2dist(k, ctrl.f_samp, unit) for k in lims]
+
+    # Plot the clusters. Different clusters use different markers
+    idx_klist = ctrl.idx_klist
+    mark = list('xov^<>12348sp*hH+,Dd|_')
+    color = itertools.chain(['k', 'g', 'r', 'c', 'm', 'y'], ('b' for x in itertools.count(0,1)))
+    ax = axes
+    for indexes in idx_klist:
+        ax = scatter_noerr(x[indexes],y[indexes],axes=ax, marker=mark.pop(0), color=next(color))
+
+    # Fix axes
     ax.set_xlabel('x-axis (' + unit + ')')
     ax.set_ylabel('y-axis (' + unit + ')')
     ax.set_xlim(lims)
@@ -480,7 +540,7 @@ def freq_response(b,a, axes=None, savename=''):
     return ax
 
 #----- CATTED GRAPHS
-def cat_graphs(graphs, rows=2,subplotsize=(9,5), savename=''):
+def cat_graphs(graphs, rows=2,subplotsize=(8,6), savename=''):
     """Concatenate the figures together together
     graphlist: list of tuples of (fct name, args, kwarg)"""
     
@@ -497,23 +557,22 @@ def cat_graphs(graphs, rows=2,subplotsize=(9,5), savename=''):
     figsize = (spargs[1]*subplotsize[0], spargs[0]*subplotsize[1])
     fig = plt.figure(figsize=figsize)
     
-
     # Build axes and draw in them
     for k, tpl in enumerate(lst):
         # Break down the tuple if needed
         fct = tpl[0]
         fargs = tpl[1] if len(tpl) > 1 else tuple()
         fkwargs = tpl[2] if len(tpl) > 2 else dict()
-        if len(tpl) > 3: raise ValueError('Input list element is a length ' + len(tpl) + 'iterable')
+        if len(tpl) > 4: raise ValueError('Input list element is a length ' + len(tpl) + 'iterable. Exected length 3 or 4')
         # Build and populate axes
         ax = fig.add_subplot(*spargs, k+1)
         fkwargs['axes'] = ax
         fct(*fargs, **fkwargs)
 
         #Make axes title
-        try:
-            ax.set_title(fkwargs['sb_title'])
-        except KeyError:
+        if len(tpl) == 4:
+            ax.set_title(tpl[3])
+        else:
             ax.set_title(fct.__name__)
 
     # Finalize figure

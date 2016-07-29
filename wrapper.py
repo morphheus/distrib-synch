@@ -55,11 +55,11 @@ def dec_wrap2():
     p.scfdma_sinc_len_factor = p.scfdma_L
 
     ctrl = SimControls()
-    ctrl.steps = 120 # BULK FOR THESIS
+    ctrl.steps = 35 # BULK FOR THESIS
     #ctrl.steps = 50 # Approx number of emissions per node
-    ctrl.basephi = 40000 # BULK FOR THESIS
+    ctrl.basephi = 6000 # BULK FOR THESIS
     #ctrl.basephi = 12000 # How many samples between emission
-    ctrl.nodecount = 40 # BULK FOR THESUS
+    ctrl.nodecount = 15 # BULK FOR THESUS
     #ctrl.nodecount = 10 # Number of nodes
     ctrl.display = True # Show stuff in the console
     ctrl.static_nodes = 0
@@ -75,14 +75,15 @@ def dec_wrap2():
     #ctrl.deltaf_bound = 0
     ctrl.rand_init = False
     ctrl.epsilon_TO = 0.5
-    ctrl.non_rand_seed = 11231231 # Only used if rand_init is False
+    ctrl.non_rand_seed = 11232819 # Only used if rand_init is False
     #ctrl.noise_power = float('-inf')
     ctrl.noise_power = -101 + 9 # in dbm
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_3gpp_exp)
     ctrl.delay_params.taps = 5
     ctrl.delay_params.max_dist_from_origin = 500 # (in meters)
-    #ctrl.delay_params.max_dist_from_origin = 1000 # (in meters)
+    ctrl.delay_params.max_dist_from_origin = 1000 # (in meters)
+    ctrl.delay_params.max_dist_from_origin = 2000 # (in meters)
 
     ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
@@ -134,14 +135,28 @@ def dec_wrap2():
 def main():
 
 
+    #data = np.array([65,70,71,74,122,128,281,292,297,3,6,10])
+    #data = lib.minimize_distance(data, 300)
+    #np.random.seed(2044239)
+    #np.random.shuffle(data)
+    #lib.cluster_1d(data)
+
+
+    #x = np.arange(25).reshape(-1,5)
+    #indexes = np.array([0,1,3])
+    #lib.reduce_square_matrix(x, indexes)
+    #exit()
+
+
     ctrl, p, cdict, pdict = dec_wrap2()
     init_cdict = {**cdict, **pdict}
     sim = SimWrap(ctrl, p, cdict, pdict)
 
     #sim.conv_offset_limits = [x*4 for x in sim.conv_offset_limits]
-    #sim.simulate()
-    #sim.post_sim_plots()
-    #exit()
+    sim.ctrl.saveall = False
+    sim.simulate()
+    sim.post_sim_plots()
+    exit()
 
     sim.set_all_nodisp()
     sim.make_plots = False
@@ -171,9 +186,15 @@ class SimWrap(lib.Struct):
     """Simulation object that handles multi-iteration of runsim(). Also dumps results to disc if needed."""
 
     force_calculate = False # Forces the update of all values before starting the simulation
-    #make_plots = True
-    show_CFO = False # only works if make_plots is True
-    show_TO = True # only works if make_plots is True
+    make_CFO = False
+    show_CFO = False 
+    make_TO = True
+    show_TO = False 
+    make_grid = True
+    show_grid = False
+    make_cat = True
+    show_cat = True
+
     show_SNR = True
     show_siglen = True
     show_bary = False
@@ -241,6 +262,8 @@ class SimWrap(lib.Struct):
         """All display values are set to false"""
         self.show_CFO = False
         self.show_TO = False
+        self.show_grid = False
+        self.show_cat = False
         self.show_SNR = False
         self.show_siglen = False
         self.show_bary = False
@@ -272,7 +295,7 @@ class SimWrap(lib.Struct):
         runsim(self.p, self.ctrl)
 
         # Fix bias removal opt (it contains numbers, should be a bool)
-        if self.ctrl.bias_removal != False:
+        if self.ctrl.saveall and self.ctrl.bias_removal != False:
             self.ctrl.bias_removal = True
         
         self.ctrl.add(**lib.eval_convergence(self, show_eval_convergence=self.show_conv, conv_min_slope_samples=self.conv_min_slope_samples, conv_offset_limits=self.conv_offset_limits))
@@ -280,8 +303,11 @@ class SimWrap(lib.Struct):
 
         savedict = self.ctrl.__dict__.copy()
         savedict['delay_grid'] = self.ctrl.delay_params.delay_grid
-        for var in NOSAVELIST:
-            del savedict[var]
+        try:
+            for var in NOSAVELIST:
+                del savedict[var]
+        except KeyError:
+            pass
         
         db.add(savedict)
 
