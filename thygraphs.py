@@ -66,6 +66,7 @@ def pinit64_no_pulse_shape():
     p.crosscorr_fct = 'analog' 
     p.pulse_type = 'raisedcosine'
     p.central_padding = 0 # As a fraction of zpos length
+    p.scfdma_precode = False
     p.CFO = 1
     p.update()
     return p
@@ -375,14 +376,26 @@ def ml_full_one(variable='CFO',noise_var=1):
     graphs.show()
 
 def zero_padded_crosscorr():
+    fontsize_tmp = graphs.FONTSIZE
+    graphs.change_fontsize(15)
+
     p = pinit64_no_pulse_shape()
     ax = graphs.crosscorr_both(p, savename='latex_figures/discrete_crosscorr');
     graphs.show()
+    graphs.change_fontsize(fontsize_tmp)
     return ax
 
 def highlited_regimes():
     """Highlights the converging vs the drift regime"""
 
+    fontsize_tmp = graphs.FONTSIZE
+    graphs.change_fontsize(15)
+    def run_hair_graph():
+        hair_args = (
+                (ctrl.sample_inter , ctrl.theta_inter, ctrl),
+                {'y_label':r'$\theta_i$ $(T_0)$', 'show_clusters':False, 'savename':''}
+        )
+        return graphs.hair(*hair_args[0], **hair_args[1])
 
     # DRIFT REGIME
     ctrl, p, cdict, pdict = dec_sample_theta()
@@ -390,10 +403,9 @@ def highlited_regimes():
 
     sim.conv_min_slope_samples = 15 
     sim.ctrl.keep_intermediate_values = True
-    sim.show_CFO = False
-    sim.show_TO = False
     sim.simulate()
-    ax, _ = sim.post_sim_plots(save_TO='', save_CFO='')
+    ax = run_hair_graph()
+    
 
     # Draw biarrows
     xmid = 12
@@ -435,9 +447,10 @@ def highlited_regimes():
     sim.ctrl.keep_intermediate_values = True
     sim.show_CFO = False
     sim.show_TO = False
+    sim.make_cat = False
     sim.simulate()
+    ax = run_hair_graph()
 
-    ax, _ = sim.post_sim_plots(save_TO='', save_CFO='')
     ax.set_xlim([xmin,xmax])
     ax.set_ylim([ya-0.05,ymax])
 
@@ -445,6 +458,9 @@ def highlited_regimes():
     fname = 'latex_figures/example_theta'
     graphs.save(fname)
     graphs.show()
+
+    graphs.change_fontsize(fontsize_tmp)
+    
 
 def sample_theta():
     """Sample N=20 theta evolution"""

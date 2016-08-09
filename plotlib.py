@@ -10,6 +10,7 @@ import math
 import warnings
 import numpy as np
 import itertools
+import copy
 from scipy import signal
 from numpy import pi
 
@@ -23,7 +24,13 @@ GRAPH_OUTPUT_LOCATION = 'graphs/' # don't forget the trailing slash
 GRAPHDUMP_OUTPUT_LOCATION = 'graphdump/' # don't forget the trailing slash
 GRAPH_OUTPUT_FORMAT = 'eps'
 
+
+__MARKS = 'xov^<>12348sp*hH+,Dd|_'
+__COLORS = 'kgrcmy' + 'k'*len(__MARKS)
+
 FONTSIZE = 19
+MARKERSIZE = FONTSIZE*2
+ERR_MARKERSIZE = 8
 matplotlib.rcParams.update({'font.size': FONTSIZE})
 #matplotlib.rc('font',**{'sans-serif':['Helvetica']})
 #matplotlib.rc('text', usetex=True)
@@ -101,7 +108,7 @@ def scatter(x, y, yerr, x_label='', y_label='',axes=None, savename='',show_std=T
     else:
         ax = axes
 
-    lh = ax.errorbar(x, y, yerr, capsize=None, **kwargs )
+    lh = ax.errorbar(x, y, yerr, capsize=None, markersize=ERR_MARKERSIZE, **kwargs )
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
 
@@ -116,7 +123,7 @@ def scatter_noerr(x, y, x_label='', y_label='',axes=None, savename='',show_std=T
     else:
         ax = axes
 
-    lh = ax.scatter(x, y, **kwargs )
+    lh = ax.scatter(x, y, s=MARKERSIZE, **kwargs )
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
 
@@ -149,7 +156,7 @@ def change_fontsize(fsize):
     matplotlib.rcParams.update({'font.size': fsize})
 
 #----- GRAPHS
-def hair(samples, param, basephi, y_label='Parameter', axes=None, savename=''):
+def hair(samples, param, ctrl, y_label='Parameter', axes=None, show_clusters=False, savename=''):
     """Plots an evolution graph of the parameter of"""
     # samples: sample_inter output from the simulation
     # Param:  <param>_inter output from the simulation
@@ -159,17 +166,25 @@ def hair(samples, param, basephi, y_label='Parameter', axes=None, savename=''):
         ax = axes
 
     for slist, plist in zip(samples,param):
-        x = np.array(slist)/basephi
-        y = np.array(plist)/basephi
+        x = np.array(slist)/ctrl.basephi
+        y = np.array(plist)/ctrl.basephi
         ax.plot(x,y, 'k-')
 
+    ymin, ymax = (0, 1)
     xmin, xmax = ax.get_xlim()
-    ymin, ymax = ax.get_ylim()
-    tmp = ymax-ymin
-    ymin, ymax = (ymin-0.05*tmp, ymax+0.05*tmp)
+    if show_clusters:
+        for k, cluster_indexes in enumerate(ctrl.idx_klist):
+            #kmean = ctrl.theta[cidx].mean()/ctrl.basephi
+            for idx in cluster_indexes:
+                y = ctrl.theta[idx]/ctrl.basephi
+                ax.scatter(xmax+0.3, y, s=MARKERSIZE, marker=__MARKS[k], color=__COLORS[k]) 
+        xmax += 1.5
+
+
+
 
     ax.set_ylim([ymin,ymax])
-    #ax.set_xlim([xmin,xmax])
+    ax.set_xlim([xmin,xmax])
     ax.set_xlabel('Time ($T_0$)')
     ax.set_ylabel(y_label)
 
@@ -185,13 +200,13 @@ def post_sim_graphs(simwrap, save_TO='lastTO', save_CFO='lastCFO', save_grid='la
     graphs = [
         (
             hair,
-            (ctrl.sample_inter , ctrl.deltaf_inter, ctrl.basephi),
+            (ctrl.sample_inter , ctrl.deltaf_inter, ctrl),
             {'y_label':'CFO (\Delta\lambda)', 'savename':save_CFO},
             'deltaf evolution'
         ),(
             hair,
-            (ctrl.sample_inter , ctrl.theta_inter, ctrl.basephi),
-            {'y_label':r'$\theta_i$ $(T_0)$', 'savename':save_TO,},
+            (ctrl.sample_inter , ctrl.theta_inter, ctrl),
+            {'y_label':r'$\theta_i$ $(T_0)$', 'show_clusters':simwrap.TO_show_clusters, 'savename':save_TO},
             'Phase evolution'
         ),(
             delay_grid_clusters,
@@ -205,10 +220,11 @@ def post_sim_graphs(simwrap, save_TO='lastTO', save_CFO='lastCFO', save_grid='la
     showlist = [simwrap.show_CFO, simwrap.show_TO, simwrap.show_grid]
 
     
-    for tmp, show_graph in zip(graphs, showlist):
-        tmp[0](*tmp[1], **tmp[2])
-        if show_graph: show()
-        else: plt.close(plt.gcf())
+    for tmp, make_graph, show_graph in zip(graphs, makelist, showlist):
+        if make_graph:
+            tmp[0](*tmp[1], **tmp[2])
+            if show_graph: show()
+            else: plt.close(plt.gcf())
 
     # Prune graphs
     graphs = [x for x,y in zip(graphs, makelist) if y]
@@ -395,7 +411,7 @@ def crosscorr_both(p, axes=None, savename=''):
     ax.set_xlabel(r'$l$')
     ax.set_ylabel(r'$|R_{sz_{\pm u}}[l]|$')
 
-    ax.legend(loc='best', fancybox=True, framealpha=0, fontsize=FONTSIZE-2)
+    ax.legend(loc='best', fancybox=True, framealpha=0, fontsize=FONTSIZE+3)
     save(savename)
     return ax
 
@@ -494,11 +510,11 @@ def delay_grid_clusters(ctrl, unit='km', axes=None, savename=''):
 
     # Plot the clusters. Different clusters use different markers
     idx_klist = ctrl.idx_klist
-    mark = list('xov^<>12348sp*hH+,Dd|_')
-    color = itertools.chain(['k', 'g', 'r', 'c', 'm', 'y'], ('b' for x in itertools.count(0,1)))
+    mark = list(__MARKS)
+    color = list(__COLORS)
     ax = axes
     for indexes in idx_klist:
-        ax = scatter_noerr(x[indexes],y[indexes],axes=ax, marker=mark.pop(0), color=next(color))
+        ax = scatter_noerr(x[indexes],y[indexes],axes=ax, marker=mark.pop(0), color=color.pop(0))
 
     # Fix axes
     ax.set_xlabel('x-axis (' + unit + ')')
@@ -623,7 +639,7 @@ def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best', 
 
     # Plot all that juicy data
 
-    mark = list('.xov^<>12348sp*hH+,Dd|_')
+    mark = list(__MARKS)
     for data, label in zip(datalist, labels):
         x, y, ystd = lib.avg_copies(data)
         ax = scatter(x, y, ystd, collist[0], collist[1], label=label, fmt='.', marker=mark.pop(0), **kwargs)

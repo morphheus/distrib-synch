@@ -55,13 +55,10 @@ def dec_wrap2():
     p.scfdma_sinc_len_factor = p.scfdma_L
 
     ctrl = SimControls()
-    ctrl.steps = 35 # BULK FOR THESIS
-    #ctrl.steps = 50 # Approx number of emissions per node
-    ctrl.basephi = 6000 # BULK FOR THESIS
-    #ctrl.basephi = 12000 # How many samples between emission
-    ctrl.nodecount = 15 # BULK FOR THESUS
-    #ctrl.nodecount = 10 # Number of nodes
-    ctrl.display = True # Show stuff in the console
+    ctrl.steps = 40
+    ctrl.basephi = 6000
+    ctrl.nodecount = 15
+    ctrl.display = True
     ctrl.static_nodes = 0
     ctrl.quiet_nodes = 0
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
@@ -75,15 +72,16 @@ def dec_wrap2():
     #ctrl.deltaf_bound = 0
     ctrl.rand_init = False
     ctrl.epsilon_TO = 0.5
-    ctrl.non_rand_seed = 11232819 # Only used if rand_init is False
+    ctrl.non_rand_seed = 771291412 # Only used if rand_init is False
     #ctrl.noise_power = float('-inf')
     ctrl.noise_power = -101 + 9 # in dbm
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_3gpp_exp)
     ctrl.delay_params.taps = 5
-    ctrl.delay_params.max_dist_from_origin = 500 # (in meters)
-    ctrl.delay_params.max_dist_from_origin = 1000 # (in meters)
+    #ctrl.delay_params.max_dist_from_origin = 500 # (in meters)
+    #ctrl.delay_params.max_dist_from_origin = 1000 # (in meters)
     ctrl.delay_params.max_dist_from_origin = 2000 # (in meters)
+    ctrl.delay_params.max_dist_from_origin = 1000 # (in meters)
 
     ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
@@ -98,9 +96,8 @@ def dec_wrap2():
     ctrl.vw_lofactor = 1.5 # winlen reduction factor
     ctrl.vw_hifactor = 2 # winlen increase factor
 
-    ctrl.outage_detect = False
+    ctrl.outage_detect = True
     ctrl.outage_threshold_noisefactor = 1/(p.zc_len)
-    
 
     ctrl.prop_correction = True
     ctrl.pc_step_wait = 0
@@ -112,22 +109,23 @@ def dec_wrap2():
     ctrl.saveall = True
 
 
-    ncount_lo = 12
+    ncount_lo = 10
     ncount_hi = ctrl.nodecount-2+1
     step = 2
     ntot = math.floor((ncount_hi - ncount_lo - 1)/abs(step))
 
-    #cdict = {
-    #    'quiet_nodes':[x for x in range(ncount_lo, ncount_hi,step)]
-    #    }
-    #pdict = {}
-    
     cdict = {
-        'prop_correction':[False, True , True ],
-    }
-    pdict = {
-        'scfdma_precode':[False, False, True ]
-    }
+        'quiet_nodes':[x for x in range(ncount_lo, ncount_hi,step)]
+        }
+    pdict = {}
+    
+    #cdict = {
+    #    'prop_correction':[False, True , True , True , True ],
+    #}
+    #pdict = {
+    #    'scfdma_precode': [False, False, False, True , True ],
+    #    'bias_removal':   [False, False, True , False, True]
+    #}
 
     return ctrl, p, cdict, pdict
 
@@ -135,32 +133,25 @@ def dec_wrap2():
 def main():
 
 
-    #data = np.array([65,70,71,74,122,128,281,292,297,3,6,10])
-    #data = lib.minimize_distance(data, 300)
-    #np.random.seed(2044239)
-    #np.random.shuffle(data)
-    #lib.cluster_1d(data)
-
-
-    #x = np.arange(25).reshape(-1,5)
-    #indexes = np.array([0,1,3])
-    #lib.reduce_square_matrix(x, indexes)
+    #thygraphs.highlited_regimes()
+    #thygraphs.zero_padded_crosscorr()
     #exit()
 
 
+    
     ctrl, p, cdict, pdict = dec_wrap2()
     init_cdict = {**cdict, **pdict}
     sim = SimWrap(ctrl, p, cdict, pdict)
 
-    #sim.conv_offset_limits = [x*4 for x in sim.conv_offset_limits]
-    sim.ctrl.saveall = False
-    sim.simulate()
-    sim.post_sim_plots()
-    exit()
+    sim.conv_offset_limits = [x*2 for x in sim.conv_offset_limits]
+    #sim.ctrl.saveall = False
+    #sim.simulate()
+    #sim.post_sim_plots()
+    #exit()
 
     sim.set_all_nodisp()
     sim.make_plots = False
-    sim.repeat = 500
+    sim.repeat = 40
     sim.ctrl.rand_init = True
 
     simstr = 'all'
@@ -168,16 +159,23 @@ def main():
     #sim.simmany(simstr);# dates = [dates[0], dates[-1]]
     #alldates = db.fetch_last_n_dates(tsims);
 
+    #alldates = db.fetch_dates([20160723012902720, 20160724030205810]) # 4.5k sims july 24 
+    #alldates += db.fetch_dates([20160803172306291, 20160804023828227 ]) # 3k sims aug3
     
-    alldates = db.fetch_dates([20160723012902720, 20160724030205810]) # 4.5k sims july 24 
     #alldates = db.fetch_dates([20160716122731390, 20160715204752242]) # 900sim quiet 1km
     #alldates = db.fetch_dates([20160718215702723, 20160718114958378]) # 540sim quiet 1.414 km
-    #dates = [alldates[0], alldates[-1]]
+    alldates = db.fetch_dates([20160807005022420, 20160807101308389]) # 1200sim quiet 2 km
+    dates = [alldates[0], alldates[-1]]
 
-    lib.options_convergence_analysis(alldates, init_cdict, write=True)
+    #lib.options_convergence_analysis(alldates, init_cdict, write=True)
 
 
+
+    lib.update_db_conv_metrics(alldates, conv_offset_limits=sim.conv_offset_limits); exit()
     #graphs.scatter_range(dates, ['quiet_nodes', 'good_link_ratio']); graphs.show()
+    graphs.scatter_range(dates, ['quiet_nodes', 'cluster_wavg_goodlink']); graphs.show()
+    graphs.scatter_range(dates, ['quiet_nodes', 'cluster_count_single']); graphs.show()
+    graphs.scatter_range(dates, ['quiet_nodes', 'cluster_count']); graphs.show()
     #graphs.scatter_range(dates, ['quiet_nodes', 'theta_drift_slope_std']); graphs.show()
     #graphs.scatter_range(dates, ['quiet_nodes', 'theta_ssstd']); graphs.show()
 
@@ -186,12 +184,17 @@ class SimWrap(lib.Struct):
     """Simulation object that handles multi-iteration of runsim(). Also dumps results to disc if needed."""
 
     force_calculate = False # Forces the update of all values before starting the simulation
+
     make_CFO = False
     show_CFO = False 
+
     make_TO = True
     show_TO = False 
+    TO_show_clusters = True
+
     make_grid = True
     show_grid = False
+
     make_cat = True
     show_cat = True
 
@@ -203,7 +206,7 @@ class SimWrap(lib.Struct):
     repeat = 1
     last_msg_len = 0
     conv_min_slope_samples = 20
-    conv_offset_limits = [-3.4, 1.8]
+    conv_offset_limits = lib.DEFAULT_OFFSET_LIMITS.copy()
 
     cdict = dict()
     pdict = dict()

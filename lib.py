@@ -41,7 +41,7 @@ LAST_PRINT_LEN = 0
 BASE62_ALPHABET =  string.digits + string.ascii_uppercase + string.ascii_lowercase
 
 SOL = 299792458 # Speed of light in m/s
-
+DEFAULT_OFFSET_LIMITS = [-3.4, 1.8]
 
 #--------------------
 def zadoff(u, N,oversampling=1,  q=0):
@@ -336,6 +336,11 @@ def d_to_a(values, pulse, spacing,dtype=CPLX_DTYPE):
 def reduce_square_matrix(x, indexes):
     """Returns view of a square matrix reduced the the row/column pairs specified in indexes"""
 
+def wavg_and_std(values, weights):
+    """Returns the weighted average and the (unbiased) standard deviation associated"""
+    average = np.average(values, weights=weights)
+    variance = np.average((values-average)**2, weights=weights)
+    return (average, np.sqrt(variance))
 #--------------------
 def barywidth_map(p, reach=0.05, scaling_fct=100, force_calculate=False, disp=False):
     """Generates the barywidth map for a given range, given as a fraction of f_symb
@@ -1191,15 +1196,7 @@ def single_set_analysis(alldates, opts):
         print('No match for \n' + str(opts))
         return ()
 
-    conv_collist = ['delay_grid',
-                    'sample_inter',
-                    'theta_inter',
-                    'thetafull_inter',
-                    'deltaf_inter',
-                    'theta',
-                    'f_samp',
-                    'basephi']
-    rawdata = db.fetch_matching({'date':match_dates}, collist=conv_collist)
+    rawdatam, conv_collist = grab_data_for_conv(match_dates)
 
     convlist = []
     for entry in rawdata:
@@ -1217,10 +1214,21 @@ def single_set_analysis(alldates, opts):
 
     return out
 
+def grab_data_for_conv(dates, conn=False):
+    conv_collist = ['delay_grid',
+                    'sample_inter',
+                    'theta_inter',
+                    'thetafull_inter',
+                    'deltaf_inter',
+                    'theta',
+                    'f_samp',
+                    'basephi']
+    return db.fetch_matching({'date':dates}, collist=conv_collist, conn=conn), conv_collist
+
 def eval_convergence(nt,
                      show_eval_convergence=False,
                      conv_min_slope_samples=40,
-                     conv_offset_limits=[-3.4, 1.8]):
+                     conv_offset_limits=DEFAULT_OFFSET_LIMITS):
     """Evaluates if convergence has been achieved on the namedtuple. Assumes nt
     contains most fields a sim object would contain"""
 
@@ -1284,30 +1292,39 @@ def eval_convergence(nt,
     def good_link_eval(x, adjusted_propagation_delay_grid):
         N = x.shape[0]
         if N==1:
-            return float('NaN')
+            return 0, 0
 
         offset_grid = build_diff_grid(x) -1*adjusted_propagation_delay_grid
         linkcount =  (N**2 - N)
 
         lo, hi = [k*1e-6*f_samp for k in conv_offset_limits]
         good_links = ((offset_grid>lo) & (offset_grid<hi)).sum() - N
-        return good_links/linkcount
+        return good_links, good_links/linkcount 
 
     # Overall GL ratio
-    output['good_link_ratio'] = good_link_eval(theta, prop_delay_grid)
+    _, output['good_link_ratio'] = good_link_eval(theta, prop_delay_grid)
     
     # intra-cluster GL ratio
+    M = len(theta)
     theta_klist, idx_klist, kcount = cluster_1d(theta)
-    cluster_good_link = []
-    for cluster, cluster_indexes in zip(theta_klist, idx_klist):
+    cluster_link_ratios = np.zeros(kcount)
+    cluster_links = np.zeros(kcount)
+    cluster_membercount = np.zeros(kcount)
+    single_kcount = 0
+    for k, (cluster, cluster_indexes) in enumerate(zip(theta_klist, idx_klist)):
         tmp = np.tile(cluster_indexes,(len(cluster_indexes),1))
-        cluster_good_link.append(good_link_eval(cluster, prop_delay_grid[tmp.T,tmp]))
+        cluster_links[k], cluster_link_ratios[k] = good_link_eval(cluster, prop_delay_grid[tmp.T,tmp])
+        cluster_membercount[k] = len(cluster)
+        single_kcount += 1 if len(cluster) == 1 else 0
 
-    cluster_good_link = np.array([x for x in cluster_good_link if not math.isnan(x)])
+    cl_lr_wavg, cl_lr_std = wavg_and_std(cluster_link_ratios, cluster_membercount/M)
+    cl_gl_per_node = cluster_links.sum()/M
+    
     output['cluster_count'] = kcount
-    output['clister_count_single'] = kcount-len(cluster_good_link)
-    output['cluster_avg_goodlink'] = np.mean(cluster_good_link)
-    output['cluster_std_goodlink'] = np.std(cluster_good_link)
+    output['cluster_count_single'] = single_kcount
+    output['cluster_wavg_goodlink'] = cl_lr_wavg
+    output['cluster_wstd_goodlink'] = cl_lr_std
+    output['cluster_link_per_node'] = cluster_links.sum()/M
 
     if show_eval_convergence:
         for key, item in sorted(output.items()):
@@ -1315,10 +1332,22 @@ def eval_convergence(nt,
 
     # Add things that are not going to be printed by nt.show_eval_convergence
     output['idx_klist'] = idx_klist
-    output['cluster_goodlink_nonsingle'] = cluster_good_link
+    output['cluster_goodlinks'] = cluster_link_ratios
     output['conv_offset_limit'] = conv_offset_limits
 
     return output
+
+def update_db_conv_metrics(dates, conv_offset_limits=DEFAULT_OFFSET_LIMITS):
+    """Updates the convergence metrics for the specified dates."""
+    # TODO: build a dedicated update function to do bulk updates
+    conn = db.connect()
+    for date in dates:
+        conv_data, collist = grab_data_for_conv([date], conn=conn)
+        metrics = eval_convergence(dict(zip( collist, conv_data[0])), conv_offset_limits=conv_offset_limits)
+        metrics['date'] = date
+        db.add(metrics, conn=conn, new_data=False)
+
+    conn.close();
 
 
 #----------------------
@@ -1346,24 +1375,32 @@ def cluster_1d_known_kcount(data, kcount):
 
 def find_numcluster_1d(data, normalization_factor=1, apply_norm=True):
     """picks out the number of clusters by clustering the distances between the points"""
-    if not (0< normalization_factor):
+    if not (0 <= normalization_factor):
         raise Exception( str(normalization_factor) + ' is an invalid normalization factor')
     
+    data -= min(data)
     dists = np.empty_like(data)
-    sdata = data.copy()
+    sdata = data.copy() # sorted data
     sdata.sort()
 
     dists[1:] = sdata[1:] - sdata[:-1]
     dists[0] = sdata[-1] - sdata[0]
+    #dists = np.delete(dists, np.argmax(dists)) # Remove biggest distance
 
     if apply_norm:
-        ndists = dists + dists.max()*normalization_factor # Normalized distance
-        ndists = (np.log(ndists)*100).astype(INT_DTYPE)
-    else:
-        ndists = dists
-    dist_klist = cluster_1d_known_kcount(ndists, 2)
+        dists = dists + dists.max()*normalization_factor # Normalized distance
+        dists = (np.log(dists)*100).astype(INT_DTYPE)
 
-    return len(dist_klist[1])
+    dmean, dstd = [dists.mean(), dists.std()]
+    kcount_std = 1
+    for x in dists:
+        kcount_std += 1 if abs(x-dmean) > dstd else 0
+
+    kcount_cluster = len(cluster_1d_known_kcount(dists, 2)[1]) + 1
+    #kcount = math.floor( (kcount_cluster+kcount_std)/2 )
+    kcount = kcount_cluster
+
+    return kcount
 
 def cluster_1d(data):
     """Applies the clustering algorithm on the data, then performs the clustering analyssi"""

@@ -116,7 +116,6 @@ def convert_syncparams(text):
 
 #----------------------
 def connect(dbase_file=DEF_DB):
-    
     sqlite3.register_adapter(np.ndarray, adapt_array)
     sqlite3.register_adapter(list, adapt_list)
     sqlite3.register_adapter(dict, adapt_dict)
@@ -202,7 +201,7 @@ def get_type_assoc(conn, tn_assoc=DEF_ASSOC_TABLE):
     return dict(cursor.fetchall())
 
 #-------------------------
-def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
+def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False, new_data=True):
     """Adds the data dictionary as one row. If new columns are added, older entries will be appropriately initiated"""
     close_conn = False
     if conn == False: 
@@ -233,6 +232,7 @@ def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
         print(type_assoc)
         raise KeyError("Incompatible type "+str(e)+", type: "+str(tmp)+" for data entry '"+str(x) +"'")
 
+
     for x in toadd:
         c.execute("ALTER TABLE {tn} ADD COLUMN '{cn}' {ct}"\
                   .format(tn=tn, cn=x[0], ct=x[1]))
@@ -254,8 +254,10 @@ def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
         collist.append(cn)
         vallist.append(val)
 
+
     def thing_that_goes_wrong():
-        c.execute("INSERT INTO {} ({}) VALUES ({})".format(tn, __PRIMARY, data[__PRIMARY]))
+        if new_data:
+            c.execute("INSERT INTO {} ({}) VALUES ({})".format(tn, __PRIMARY, data[__PRIMARY]))
         for k in range(len(collist)):
             try:
                 c.execute("UPDATE {} SET {}=(?) WHERE date={}".format(tn, collist[k], data[__PRIMARY])\
@@ -277,8 +279,8 @@ def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
     if close_conn:
         conn.close()
 
-def del_row(date, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
-    """Deletes the row matching the date"""
+def del_rows(dates, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
+    """Deletes the rows matching the dates"""
     close_conn = False
     if conn == False: 
         conn = connect(dbase_file)
@@ -286,12 +288,29 @@ def del_row(date, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
 
     c = conn.cursor()
 
-    string = "DELETE FROM " + tn + " WHERE date = " + str(date)
+    datestring = ','.join([str(x) for x in dates])
+    string = "DELETE FROM " + tn + " WHERE date in (" + str(datestring) + ")"
     c.execute(string)
     conn.commit()
     
     if close_conn:
         conn.close()
+
+def vacuum(tn=DEF_TABLE, dbase_file=DEF_DB, conn=False):
+    """Deletes the rows matching the dates"""
+    close_conn = False
+    if conn == False: 
+        conn = connect(dbase_file)
+        closeconn = True
+
+    c = conn.cursor()
+    string = "VACUUM"
+    c.execute(string)
+    conn.commit()
+    
+    if close_conn:
+        conn.close()
+
 
 #--------------------
 # FETCHING FUNCTIONS
