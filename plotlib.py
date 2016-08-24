@@ -209,7 +209,7 @@ def post_sim_graphs(simwrap, save_TO='lastTO', save_CFO='lastCFO', save_grid='la
             {'y_label':r'$\theta_i$ $(T_0)$', 'show_clusters':simwrap.TO_show_clusters, 'savename':save_TO},
             'Phase evolution'
         ),(
-            delay_grid_clusters,
+            spatial_grid_clusters,
             (ctrl,),
             {'savename':save_grid},
             'Nodes positions and clustering'
@@ -477,7 +477,7 @@ def delay_pdf(ctrl, axes=None, savename=''):
     ax.set_ylabel('Amplitude')
     return ax
 
-def delay_grid(ctrl, unit='km', axes=None, savename=''):
+def spatial_grid(ctrl, unit='km', axes=None, savename=''):
     """Plots the map of the nodes"""
     obj = ctrl.delay_params
     fct = obj.delay_pdf_eval
@@ -496,10 +496,9 @@ def delay_grid(ctrl, unit='km', axes=None, savename=''):
     ax.set_ylim(lims)
     return ax
 
-def delay_grid_clusters(ctrl, unit='km', axes=None, savename=''):
+def spatial_grid_clusters(ctrl, unit='km', axes=None, savename=''):
     """Plots the map of the nodes with clusters coloring"""
     obj = ctrl.delay_params
-    fct = obj.delay_pdf_eval
 
     x,y = [k for k in [obj.gridx, obj.gridy]]
     lims = [sign*0.55*obj.width for sign in [-1,1]]
@@ -515,6 +514,14 @@ def delay_grid_clusters(ctrl, unit='km', axes=None, savename=''):
     ax = axes
     for indexes in idx_klist:
         ax = scatter_noerr(x[indexes],y[indexes],axes=ax, marker=mark.pop(0), color=color.pop(0))
+
+    # Plot green circles to indicate the broadcasting nodes
+    radius = (lims[1]-lims[0])* 0.03
+    if ctrl.quiet_nodes != 0:
+        for idx in ctrl.pivot_node:
+            circle = plt.Circle((x[idx], y[idx]), radius, color='b', fill=False)
+            ax.add_artist(circle)
+
 
     # Fix axes
     ax.set_xlabel('x-axis (' + unit + ')')
@@ -623,7 +630,6 @@ def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best', 
         all_labels = db.fetch_range(sorted_dates, [multiplot])
         labels = []
         [labels.append(k) for k in all_labels if k not in labels]
-
     else:
         labels = ['']
 
@@ -632,10 +638,9 @@ def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best', 
     fetch_dict = {'date':alldates}
     for label in labels:
         if multiplot:
-            fetch_dict[multiplot] = ["'" + label +"'"]
-        raw_data = np.array(db.fetch_matching(fetch_dict, collist))
-        datalist.append(raw_data)
-
+            fetch_dict[multiplot] = [label]
+        raw_data = db.fetch_matching(fetch_dict, collist)
+        datalist.append(np.array(raw_data))
 
     # Plot all that juicy data
 

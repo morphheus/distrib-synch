@@ -3,6 +3,8 @@
 import lib
 import plotlib as graphs
 import numpy as np
+
+import dumbsqlite3 as db
 from wrapper import SimWrap
 from sim_channel import SimControls
 
@@ -380,7 +382,7 @@ def zero_padded_crosscorr():
     graphs.change_fontsize(15)
 
     p = pinit64_no_pulse_shape()
-    ax = graphs.crosscorr_both(p, savename='latex_figures/discrete_crosscorr');
+    ax = graphs.crosscorr(p, savename='latex_figures/discrete_crosscorr');
     graphs.show()
     graphs.change_fontsize(fontsize_tmp)
     return ax
@@ -460,7 +462,6 @@ def highlited_regimes():
     graphs.show()
 
     graphs.change_fontsize(fontsize_tmp)
-    
 
 def sample_theta():
     """Sample N=20 theta evolution"""
@@ -473,13 +474,22 @@ def sample_theta():
     sim.show_TO = False
     sim.simulate()
     ax, _ = sim.post_sim_plots(save_TO='', save_CFO='')
-    
+
+
+def thesis_cavg_vs_nodecount():
+    alldates = db.fetch_dates([20160823191214935, 20160823194541680]) # 360k sims nodecount
+    dates = [alldates[0], alldates[-1]]
+
+    ax = graphs.scatter_range(dates, ['nodecount', 'good_link_ratio'], color='k')
+    ax.set_xlabel("$M$")
+    ax.set_ylabel("$C_{avg}$")
+
+    graphs.show()
+
 
 
 
 # MAIN
 if __name__ == '__main__':
-    noise_variance = 0.00
-    #ml_full_one('CFO', noise_var=noise_variance)
-    ml_full_3d(noise_var=noise_variance)
+    pass
 

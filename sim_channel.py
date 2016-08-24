@@ -88,9 +88,8 @@ def runsim(p, ctrl):
     outage_threshold = ctrl.outage_threshold_noisefactor * np.sqrt(noise_var)
 
 
-
     # --------
-    # Static init
+    # Static init (things that don't require direct randomness)
     deltaf_minmax = np.array([-1*ctrl.deltaf_bound,ctrl.deltaf_bound])*p.f_symb
     do_CFO_correction = np.array([False]*nodecount)
     wait_CFO_correction = np.zeros(nodecount)
@@ -104,21 +103,11 @@ def runsim(p, ctrl):
     prev_TO = np.array([float('inf')]*nodecount, dtype=lib.FLOAT_DTYPE)
     nodes_winlen = np.array([ctrl.chansize]*nodecount, dtype=lib.INT_DTYPE)
     hd_sync_slot = np.array([0 if k%2 else 1 for k in range(nodecount)])
-    nodetype = np.array(['stati']*ctrl.static_nodes +
-                        ['quiet']*ctrl.quiet_nodes + 
-                        ['varia']*(nodecount-ctrl.static_nodes-ctrl.quiet_nodes))
     prev_TOx = [collections.deque(np.zeros(len(pc_b)),len(pc_b)) for k in range(nodecount)]
     prev_TOy = [collections.deque(np.zeros(len(pc_a)-1),len(pc_a)-1) for k in range(nodecount)]
     out_of_coverage = np.array([False]*nodecount)
     pc_counter = np.zeros(nodecount)
     do_pc_step_wait = np.zeros(nodecount)
-
-    if ctrl.TO_step_wait > 0:
-        next_event = np.array(['emit' if x=='stati' else 'adju' for x in nodetype])
-    else:
-        next_event = np.array(['adju' if x=='quiet' else 'emit' for x in nodetype])
-
-
     if ctrl.keep_intermediate_values:
         sample_inter = [[] for k in range(nodecount)]
         theta_inter = [[] for k in range(nodecount)]
@@ -126,14 +115,63 @@ def runsim(p, ctrl):
         phi_inter = [[] for k in range(nodecount)]
         deltaf_inter = [[] for k in range(nodecount)]
 
+    # Half-duplex management
     if ctrl.half_duplex:
         emit_frac = np.array([ctrl.hd_slot0 if k==0 else ctrl.hd_slot1 for k in hd_sync_slot], dtype=lib.FLOAT_DTYPE)
         adjust_frac = np.array([ctrl.hd_slot0 if k==1 else ctrl.hd_slot1 for k in hd_sync_slot], dtype=lib.FLOAT_DTYPE)
     else:
         emit_frac = np.array([1/2]*nodecount, dtype=lib.FLOAT_DTYPE)
         adjust_frac = 1-emit_frac;
-    
     hd_correction = np.round((emit_frac-adjust_frac)*basephi).astype(dtype=lib.INT_DTYPE)
+
+    # Determine which nodes are quiet
+    def random_nodetype_assign():
+        random_nodetype = np.array(['stati']*ctrl.static_nodes +
+                                   ['quiet']*ctrl.quiet_nodes +
+                                   ['varia']*(nodecount-ctrl.static_nodes-ctrl.quiet_nodes))
+        tmp0 = [x for x in range(ctrl.static_nodes)]
+        tmp1 = [x for x in range(ctrl.static_nodes+ ctrl.quiet_nodes, nodecount)]
+        random_pivot_node = np.array(tmp0+tmp1)
+        return random_nodetype, random_pivot_node
+
+    # quiet_selection
+    apply_quiet_contention = False
+    if ctrl.quiet_selection == 'contention':
+        if not ctrl.outage_detect:
+            raise Exception('Quiet contention requires outage detection to be enabled')
+        apply_quiet_contention = True
+        qc_counter = np.zeros(nodecount, dtype=lib.INT_DTYPE)
+        tmp_quiet = ctrl.quiet_nodes
+        ctrl.quiet_nodes = 0
+        nodetype, _ = random_nodetype_assign()
+        ctrl.quiet_nodes = tmp_quiet
+    elif ctrl.quiet_selection == 'random':
+        nodetype, pivot_node = random_nodetype_assign()
+    elif ctrl.quiet_selection == 'kmeans':
+        if ctrl.quiet_nodes < 1:
+            nodetype, pivot_node = random_nodetype_assign()
+        else:
+            nodetype = np.array(['quiet']*ctrl.nodecount)
+            gridx = ctrl.delay_params.gridx
+            gridy = ctrl.delay_params.gridy
+
+            # assign the quiet nodes via k-means when less quiets
+            invert = False
+            k = nodecount-ctrl.quiet_nodes
+            pivot_node, pc = lib.find_pivot_node_kmeans(gridx, gridy, k)
+            non_quiet_list = ['stati']*ctrl.static_nodes +\
+                             ['varia']*(nodecount-ctrl.static_nodes-ctrl.quiet_nodes)
+            for idx in pivot_node:
+                nodetype[idx] = non_quiet_list.pop(0)
+    else:
+        raise Exception('Unknown non-quiet selection: ' + str(ctrl.quiet_selection))
+
+    # Assign first event
+    if ctrl.TO_step_wait > 0:
+        next_event = np.array(['emit' if x=='stati' else 'adju' for x in nodetype])
+    else:
+        next_event = np.array(['adju' if x=='quiet' else 'emit' for x in nodetype])
+
     
     #---------
     # Rand init
@@ -320,10 +358,6 @@ def runsim(p, ctrl):
             else:
                 barypos = winlen - wait_til_adjust[node]
                 baryneg = barypos
-
-
-            
-            #print(corpos.shape); exit()
             bary_avg = int(round((barypos+baryneg)/2)) 
 
             # Offset with respect to emit time
@@ -344,6 +378,18 @@ def runsim(p, ctrl):
                     out_of_coverage[node] = True
                 else:
                     out_of_coverage[node] = False
+
+            # Quiet contention
+            if apply_quiet_contention:
+                if crosscorr_avgmax > ctrl.qc_threshold*outage_threshold:
+                    if qc_counter[node] >= ctrl.qc_steps:
+                        nodetype[node] = 'quiet'
+                    else:
+                        qc_counter[node] += 1
+                else:
+                    qc_counter[node] += 0
+                    nodetype[node] = 'varia'
+                
             
             # Prop delay correction
             prev_TOx[node].appendleft(TO)
@@ -372,9 +418,6 @@ def runsim(p, ctrl):
             theta[node] = theta[node] % phi[node]
 
             #prev_TO[node] = TO
-
-
-
             # CFO correction
             CFO = cfo_mapper_fct(barypos-baryneg, p)
             
@@ -406,6 +449,7 @@ def runsim(p, ctrl):
             # Bookeeping
             add_inter(cursample, node)
 
+
             # Set next event
             if wait_emit[node] < ctrl.TO_step_wait:
                 next_event_sample = (math.ceil(phi[node])\
@@ -421,6 +465,7 @@ def runsim(p, ctrl):
                                           +cursample+TO).astype(lib.INT_DTYPE)
                 next_event[node] = 'emit'
 
+            # Simulated processing time
             if next_event_sample <= cursample + phi[node]*ctrl.min_back_adjust:
                 next_event_sample += phi[node]
             
@@ -433,7 +478,8 @@ def runsim(p, ctrl):
         # Fetch next event/node
         prev_sample = cursample
         cursample = queue_sample.pop(0)
-        if prev_sample > cursample: raise Exception("Cursample was lowered; time travel isn't allowed")
+        if prev_sample > cursample:
+            raise Exception("Cursample was lowered; time travel isn't allowed")
         node = queue_clk.pop(0)
 
 
@@ -449,6 +495,9 @@ def runsim(p, ctrl):
         #print('deltaf STD: ' + str(np.std(deltaf)) + '    spread: ' + str(max(deltaf)-min(deltaf)))
 
 
+    # determine what were the final pivot nodes if quiet contention is use
+    if apply_quiet_contention:
+        pivot_node = np.where(nodetype!='quiet')[0]
     # Add all calculated values with the controls parameter structure
     ctrl.theta = theta
     ctrl.deltaf = deltaf
@@ -456,6 +505,8 @@ def runsim(p, ctrl):
     ctrl.theta_ssstd = np.std(theta)
     ctrl.deltaf_ssstd = np.std(deltaf)
     ctrl.phi_ssstd = np.std(phi)
+    ctrl.pivot_node = pivot_node
+    ctrl.nodetype = nodetype
     ctrl.simulated = True
 
     if ctrl.keep_intermediate_values:
@@ -557,6 +608,8 @@ class SimControls(lib.Struct):
         if not self.rand_init:
             np.random.seed(self.non_rand_seed)
 
+        self.delay_params.max_dist_from_origin = self.max_dist_from_origin
+        
         self.echo_delay, self.echo_amp = self.delay_params.build_delay_matrix(self.nodecount, self.basephi, self.f_samp, self.f_carr, **self.pdf_kwargs)
 
         if not self.rand_init:

@@ -10,6 +10,7 @@ import inspect
 import os.path
 import string
 import traceback
+import random
 from sqlite3 import OperationalError
 
 from numpy import pi
@@ -17,6 +18,7 @@ from numpy import log10
 from pprint import pprint
 from scipy import signal
 from scipy.signal import fftconvolve
+from scipy.cluster import vq
 from scipy.optimize import curve_fit, leastsq
 from jenks import jenks
 
@@ -592,7 +594,6 @@ def md_energy(signal, pulse, spacing, expected_start_index=0):
     s1 += decimated_start_index
     decimated = cross_correlation[s1:s1+M:spacing]
 
-    print(len(decimated))
     
     return decimated, decimated_start_index
 
@@ -836,6 +837,7 @@ def pathloss_b1_tot(x, f_samp, f_carr, out_format='amp'):
     # Compute pathloss (in dB)
     pl = np.maximum(pathloss_freespace(d, f_carr), pathloss_b1(d, f_carr, los))
 
+
     # Format the pathloss
     if out_format=='amp':
         out = db2amp(pl)
@@ -849,6 +851,11 @@ def pathloss_b1_tot(x, f_samp, f_carr, out_format='amp'):
         raise ValueError('Invalid output format: "' + out_format + '" not recognized.')
 
     return out, los
+
+def shadowing_3gpp():
+    """Returns a log-normal shadowing with std of 7 db"""
+    return np.random.normal(0,7)
+
 
 def drop_unifcircle(N, D):
     """uniform drop N nodes within a circle of diameter D. Returns x and y coords"""
@@ -1302,7 +1309,7 @@ def eval_convergence(nt,
         return good_links, good_links/linkcount 
 
     # Overall GL ratio
-    _, output['good_link_ratio'] = good_link_eval(theta, prop_delay_grid)
+    total_good_links, output['good_link_ratio'] = good_link_eval(theta, prop_delay_grid)
     
     # intra-cluster GL ratio
     M = len(theta)
@@ -1324,7 +1331,7 @@ def eval_convergence(nt,
     output['cluster_count_single'] = single_kcount
     output['cluster_wavg_goodlink'] = cl_lr_wavg
     output['cluster_wstd_goodlink'] = cl_lr_std
-    output['cluster_link_per_node'] = cluster_links.sum()/M
+    output['total_links_per_node'] = total_good_links/M
 
     if show_eval_convergence:
         for key, item in sorted(output.items()):
@@ -1348,7 +1355,6 @@ def update_db_conv_metrics(dates, conv_offset_limits=DEFAULT_OFFSET_LIMITS):
         db.add(metrics, conn=conn, new_data=False)
 
     conn.close();
-
 
 #----------------------
 def cluster_1d_known_kcount(data, kcount):
@@ -1409,9 +1415,45 @@ def cluster_1d(data):
     val_klist = [data[sublist] for sublist in idx_klist]
     return val_klist, idx_klist, kcount
 
+#---------------------
+def find_pivot_node_kmeans(x,y,kcount):
+    """Applies the k-means algorithm on 2d data"""
+    if len(x) < kcount:
+        raise Exception('More clusters than data!')
 
+    # Assign the quiet nodes via-kmeans 
+    
+    data = np.vstack((x.reshape(1,-1),y.reshape(1,-1))).T
+    tmp = np.array([(i+1)*len(x)//(kcount+1) for i in range(kcount)])
+    start_matrix = np.sort(data.copy(), axis=0)[tmp,:]
+    with warnings.catch_warnings(): # In case of empty clusters
+        warnings.simplefilter("ignore")
+        centroids, closest_centroid = vq.kmeans2(data, start_matrix, minit='matrix')
+    closest_points_idx = [np.where(closest_centroid==x)[0] for x in range(kcount)]
 
+    # Find the closest datapoint to each centroid
+    pivot_idx = []
+    for centroid, points_idx in zip(centroids, closest_points_idx):
+        if len(points_idx) == 0: # If empty, we deal with it later
+            continue
+        points = data[points_idx, :]
+        tmp = np.tile(centroid.reshape(-1,1), len(points_idx)).T
+        distances = ((points - tmp)**2).sum(axis=1)
+        pivot_idx.append(points_idx[np.argmin(distances)])
 
+    # Empty centroids are randomly assigned from remaining datapoints
+    idx_array = np.arange(len(x))
+    mask = np.array([False if x in pivot_idx else True for x in range(len(x))])
+    for x in range(kcount-len(pivot_idx)):
+        # ideal approach, but it breaks reproducibility
+        # rnd_idx = np.random.choice(idx_array[mask]) 
+
+        # Works if the datapoints are already in random order
+        rnd_idx = (idx_array[mask])[0]
+        pivot_idx.append(rnd_idx)
+        mask[rnd_idx] = False
+
+    return pivot_idx, data[pivot_idx,:]
 
 
 ##########################
@@ -1439,6 +1481,7 @@ class DelayParams(Struct):
         self.taps = taps
         self.max_dist_from_origin = max_dist_from_origin
         self.DS_func = delay_DS_UMi
+        self.shadowing_fct = shadowing_3gpp
 
     def delay_pdf_eval(self, t, DS, rt, t0=0, **kwargs):
         return self.delay_pdf(t, DS, rt, t0=t0, **kwargs)
@@ -1460,6 +1503,7 @@ class DelayParams(Struct):
         amp_list = [self.delay_pdf_eval(t,DS, rt,t0=t0, **kwargs) for t in delay_list]
         delay = np.array(delay_list, FLOAT_DTYPE)
         amp = np.array(amp_list, FLOAT_DTYPE)
+        
         return delay, amp
 
     def build_delay_matrix(self, nodecount, basephi, f_samp, f_carr,  **kwargs):
@@ -1491,8 +1535,12 @@ class DelayParams(Struct):
                     continue
                 t0 = self.delay_grid[k,l]
                 delay, amp = self.rnd_delay(t0, self.los_grid[k,l], f_samp, **kwargs)
+
+                # Apply shadowing
+                Z = self.shadowing_fct()
+                
                 echoes['delay'][k][l] = (delay).astype(INT_DTYPE)
-                echoes['amp'][k][l] = amp/db2amp(self.pathloss_grid[k,l])
+                echoes['amp'][k][l] = amp/db2amp(self.pathloss_grid[k,l] - Z)
 
         self.delay_grid = (self.delay_grid).astype(INT_DTYPE)
 

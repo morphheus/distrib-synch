@@ -55,12 +55,19 @@ def dec_wrap2():
     p.scfdma_sinc_len_factor = p.scfdma_L
 
     ctrl = SimControls()
-    ctrl.steps = 40
-    ctrl.basephi = 6000
-    ctrl.nodecount = 15
+    ctrl.steps = 70
+    ctrl.basephi = 40000 #Thesis
+    #ctrl.basephi = 122880 #Interd
+    ctrl.nodecount = 35
     ctrl.display = True
     ctrl.static_nodes = 0
     ctrl.quiet_nodes = 0
+    #ctrl.quiet_selection = 'kmeans'
+    ctrl.quiet_selection = 'random'
+    #ctrl.quiet_selection = 'contention' # Note this renders ctrl.quiet_nodes uiseless, and requires the use of outage detectection
+    ctrl.qc_threshold = 5 # As a factor of the outage threshold
+    ctrl.qc_steps = 3
+
     ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
     ctrl.TO_step_wait = 4
     ctrl.max_start_delay = 7 # In factor of basephi
@@ -72,16 +79,17 @@ def dec_wrap2():
     #ctrl.deltaf_bound = 0
     ctrl.rand_init = False
     ctrl.epsilon_TO = 0.5
-    ctrl.non_rand_seed = 771291412 # Only used if rand_init is False
+    ctrl.non_rand_seed = 17481 # Only used if rand_init is False
     #ctrl.noise_power = float('-inf')
     ctrl.noise_power = -101 + 9 # in dbm
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_3gpp_exp)
     ctrl.delay_params.taps = 5
-    #ctrl.delay_params.max_dist_from_origin = 500 # (in meters)
-    #ctrl.delay_params.max_dist_from_origin = 1000 # (in meters)
-    ctrl.delay_params.max_dist_from_origin = 2000 # (in meters)
-    ctrl.delay_params.max_dist_from_origin = 1000 # (in meters)
+    #ctrl.delay_params.shadowing_fct = lambda : 0
+    ctrl.max_dist_from_origin = 500 # (in meters)
+    #ctrl.max_dist_from_origin = 1000 # (in meters)
+    #ctrl.max_dist_from_origin = 1000 # (in meters)
+    #ctrl.max_dist_from_origin = 2000 # (in meters)
 
     ctrl.half_duplex = False
     ctrl.hd_slot0 = 0.3 # in terms of phi
@@ -96,12 +104,15 @@ def dec_wrap2():
     ctrl.vw_lofactor = 1.5 # winlen reduction factor
     ctrl.vw_hifactor = 2 # winlen increase factor
 
-    ctrl.outage_detect = True
-    ctrl.outage_threshold_noisefactor = 1/(p.zc_len)
+
+    ctrl.outage_detect = False # thesis
+    #ctrl.outage_detect = True # INTERD
+    ctrl.outage_threshold_noisefactor = 1/(p.zc_len)*2
 
     ctrl.prop_correction = True
     ctrl.pc_step_wait = 0
-    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(6)
+    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(6) #THESIS
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(10) #INTERD
     ctrl.pc_avg_thresh = float('inf') # If std of N previous TOx samples is above this value, then\
     ctrl.pc_std_thresh = float(80) # If std of N previous TOx samples is above this value, then\
                      # no PC is applied (but TOy is still calculated)
@@ -110,12 +121,19 @@ def dec_wrap2():
 
 
     ncount_lo = 10
-    ncount_hi = ctrl.nodecount-2+1
+    ncount_hi = ctrl.nodecount+1 
     step = 2
     ntot = math.floor((ncount_hi - ncount_lo - 1)/abs(step))
 
+
+    #cdict = {
+    #    'quiet_selection':['random', 'kmeans', 'contention']*4,
+    #    'max_dist_from_origin':[500]*3 + [750]*3 + [1000]*3 + [1500]*3
+    #    }
+    #pdict = {}
+
     cdict = {
-        'quiet_nodes':[x for x in range(ncount_lo, ncount_hi,step)]
+        'nodecount':[x for x in range(ncount_lo, ncount_hi,step)]
         }
     pdict = {}
     
@@ -132,18 +150,15 @@ def dec_wrap2():
 #------------------------
 def main():
 
-
-    #thygraphs.highlited_regimes()
-    #thygraphs.zero_padded_crosscorr()
-    #exit()
-
+    #thygraphs.thesis_cavg_vs_nodecount(); exit()
 
     
     ctrl, p, cdict, pdict = dec_wrap2()
     init_cdict = {**cdict, **pdict}
     sim = SimWrap(ctrl, p, cdict, pdict)
 
-    sim.conv_offset_limits = [x*2 for x in sim.conv_offset_limits]
+
+    #sim.conv_offset_limits = [x*2 for x in sim.conv_offset_limits]
     #sim.ctrl.saveall = False
     #sim.simulate()
     #sim.post_sim_plots()
@@ -151,33 +166,39 @@ def main():
 
     sim.set_all_nodisp()
     sim.make_plots = False
-    sim.repeat = 40
+    sim.repeat = 60
     sim.ctrl.rand_init = True
 
     simstr = 'all'
     tsims = sim.total_sims(simstr)
-    #sim.simmany(simstr);# dates = [dates[0], dates[-1]]
+    sim.simmany(simstr);# dates = [dates[0], dates[-1]]
     #alldates = db.fetch_last_n_dates(tsims);
 
     #alldates = db.fetch_dates([20160723012902720, 20160724030205810]) # 4.5k sims july 24 
     #alldates += db.fetch_dates([20160803172306291, 20160804023828227 ]) # 3k sims aug3
+    #alldates = db.fetch_dates([20160823191214935, 20160823194541680]) # 360k sims nodecount
+
+
+
     
     #alldates = db.fetch_dates([20160716122731390, 20160715204752242]) # 900sim quiet 1km
     #alldates = db.fetch_dates([20160718215702723, 20160718114958378]) # 540sim quiet 1.414 km
-    alldates = db.fetch_dates([20160807005022420, 20160807101308389]) # 1200sim quiet 2 km
+    #alldates = db.fetch_dates([20160807005022420, 20160807101308389]) # 1200sim quiet 2 km
+
+    #alldates = db.fetch_dates([20160812174745548, 20160813032432642]) # 1200sim kmeans
+    #alldates = db.fetch_dates([20160822172521531, 20160822215536865]) # 960sims quiet compare
     dates = [alldates[0], alldates[-1]]
 
+    #graphs.scatter_range(dates, ['max_dist_from_origin', 'good_link_ratio'], multiplot='quiet_selection'); graphs.show()
+
+
     #lib.options_convergence_analysis(alldates, init_cdict, write=True)
-
-
-
-    lib.update_db_conv_metrics(alldates, conv_offset_limits=sim.conv_offset_limits); exit()
-    #graphs.scatter_range(dates, ['quiet_nodes', 'good_link_ratio']); graphs.show()
-    graphs.scatter_range(dates, ['quiet_nodes', 'cluster_wavg_goodlink']); graphs.show()
-    graphs.scatter_range(dates, ['quiet_nodes', 'cluster_count_single']); graphs.show()
-    graphs.scatter_range(dates, ['quiet_nodes', 'cluster_count']); graphs.show()
-    #graphs.scatter_range(dates, ['quiet_nodes', 'theta_drift_slope_std']); graphs.show()
-    #graphs.scatter_range(dates, ['quiet_nodes', 'theta_ssstd']); graphs.show()
+    #print(db.fetchone(alldates[0], 'pc_b'))
+    #lib.update_db_conv_metrics(alldates, conv_offset_limits=sim.conv_offset_limits); exit()
+    #graphs.scatter_range(dates, ['quiet_nodes', 'good_link_ratio']); graphs.show(); exit()
+    #graphs.scatter_range(dates, ['quiet_nodes', 'cluster_wavg_goodlink']); graphs.show()
+    #graphs.scatter_range(dates, ['quiet_nodes', 'cluster_count_single']); graphs.show()
+    #graphs.scatter_range(dates, ['quiet_nodes', 'cluster_count']); graphs.show()
 
 
 class SimWrap(lib.Struct):
@@ -271,8 +292,8 @@ class SimWrap(lib.Struct):
         self.show_siglen = False
         self.show_bary = False
         self.show_elapsed = False
-        self.ctrl.display = False
         self.show_conv = False
+        self.ctrl.display = False
 
     def simulate(self):
         """Simulate and run post-sim stuff, such as graphs or output saving"""
@@ -353,9 +374,13 @@ class SimWrap(lib.Struct):
                 msg += "%2.2f"%(count*100/tsims) + "% done -- avg time:" +  "%2.2f"%avg_time + ' sec/iteration'
                 oprint(msg)
                 self.ctrl.update()
-                curdate = self.simulate()
-                dates.append(curdate)
                 count += 1
+                try:
+                    curdate = self.simulate()
+                except Exception:
+                    print('\n Unhandled exception: ' + str(Exception) + '\n')
+                    continue
+                dates.append(curdate)
         oprint(' '*len(msg))
         print('Done simmany in ' + "%2.2f"%(tf()-t0) + ' seconds.')
 
