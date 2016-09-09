@@ -13,6 +13,12 @@ Before doing simulations, a database file must be initialized. In a python conso
 ```
 This will initialize the sqlite database in the working directory.
 
+Note that this program requires the following packages:
+numpy
+scipy
+sqlite3
+matplotlib
+
 # Utilization
 The program is set up such that `wrapper.py` is executed at the terminal, e.g.:
 ```

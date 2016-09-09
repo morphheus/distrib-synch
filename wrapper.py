@@ -186,11 +186,11 @@ def main():
     sim = SimWrap(ctrl, p, cdict, pdict)
 
     
-    # Uncomment this if you want to do only ONE simulation
-    #sim.ctrl.saveall = False
-    #sim.simulate()
-    #sim.post_sim_plots()
-    #exit()
+    # Comment this if you want to do MANY simulation
+    sim.ctrl.saveall = False
+    sim.simulate()
+    sim.post_sim_plots()
+    exit()
 
     # Utilize this if you want to do MANY simulations.
     # see SimWrap for details
