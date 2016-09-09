@@ -3,6 +3,8 @@
 import lib
 import plotlib as graphs
 import numpy as np
+import warnings
+import copy
 
 import dumbsqlite3 as db
 from wrapper import SimWrap
@@ -124,6 +126,7 @@ def dec_regimes():
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_3gpp_exp)
     ctrl.delay_params.taps = 5
+    ctrl.max_dist_from_origin = 250 # (in meters)
     ctrl.delay_params.max_dist_from_origin = 250 # (in meters)
     ctrl.delay_params.p_sigma = 500 # Paths sigma
 
@@ -215,8 +218,8 @@ def dec_sample_theta():
     ctrl.rand_init = False
     ctrl.epsilon_TO = 0.5
 
-    #seed = int(np.random.rand()*1e8)
-    seed = 5845527
+    #seed = int(np.random.rand()*1e8); print(seed)
+    seed = 2596829
     ctrl.non_rand_seed = seed # Only used if rand_init is False
 
     #ctrl.non_rand_seed = 57276545 # Only used if rand_init is False
@@ -225,6 +228,7 @@ def dec_sample_theta():
 
     ctrl.delay_params = lib.DelayParams(lib.delay_pdf_3gpp_exp)
     ctrl.delay_params.taps = 5
+    ctrl.max_dist_from_origin = 250 # (in meters)
     ctrl.delay_params.max_dist_from_origin = 250 # (in meters)
 
     ctrl.half_duplex = False
@@ -259,6 +263,130 @@ def dec_sample_theta():
     pdict = {}
     #pdict = {'match_decimate_fct':[lib.md_clkphase]*ntot+[lib.md_energy]*ntot+[lib.md_static]*ntot}
 
+    return ctrl, p, cdict, pdict
+
+def dec_r12():
+    """Single ZC sequence with Decimation"""
+    p = lib.SyncParams()
+    p.zc_len = 31
+    p.plen = 31
+
+    p.rolloff = 0.2
+    p.f_symb = 30.72e6
+    p.f_samp = p.f_symb*4
+    p.repeat = 1
+    p.spacing_factor = 1
+
+    p.power_weight = 2
+    p.full_sim = True
+    p.bias_removal = False
+    p.ma_window = 1 # number of samples to average in the crosscorr i.e. after analog modulation
+    p.train_type = 'single' # Type of training sequence
+    p.crosscorr_type = 'match_decimate' 
+    p.match_decimate_fct = lib.downsample
+    p.peak_detect = 'argmax' 
+    p.pulse_type = 'rootraisedcosine'
+    p.central_padding = 0 # As a fraction of zpos length
+    p.scfdma_precode = False
+    p.scfdma_L = 4 
+    p.scfdma_sinc_len_factor = p.scfdma_L
+
+    ctrl = SimControls()
+    ctrl.steps = 20
+    ctrl.basephi = 6000 #Thesis
+    #ctrl.basephi = 122880 #Interd
+    ctrl.nodecount = 15
+    ctrl.display = True
+    ctrl.static_nodes = 2
+    ctrl.quiet_nodes = 0
+    #ctrl.quiet_selection = 'kmeans'
+    ctrl.quiet_selection = 'random'
+    #ctrl.quiet_selection = 'contention' # Note this renders ctrl.quiet_nodes uiseless, and requires the use of outage detectection
+    ctrl.qc_threshold = 5 # As a factor of the outage threshold
+    ctrl.qc_steps = 3
+
+    ctrl.CFO_step_wait = float('inf') # Use float('inf') to never correct for CFO
+    ctrl.TO_step_wait = ctrl.steps*2
+    ctrl.max_start_delay = 7 # In factor of basephi
+
+    ctrl.use_ringarr = True
+
+    ctrl.theta_bounds = [0,1] # In units of phi
+    ctrl.deltaf_bound = 3e-2
+    #ctrl.deltaf_bound = 0
+    ctrl.rand_init = False
+    ctrl.epsilon_TO = 1
+    #ctrl.non_rand_seed = 2810438 # Only used if rand_init is False
+    ctrl.non_rand_seed = 12819 # Only used if rand_init is False
+    #ctrl.noise_power = float('-inf')
+    ctrl.noise_power = -101 + 9 # in dbm
+
+    ctrl.delay_params = lib.DelayParams(lib.delay_pdf_3gpp_exp)
+    ctrl.delay_params.taps = 5
+    #ctrl.delay_params.shadowing_fct = lambda : 0
+    ctrl.max_dist_from_origin = 500 # (in meters)
+    #ctrl.max_dist_from_origin = 1000 # (in meters)
+    #ctrl.max_dist_from_origin = 1000 # (in meters)
+    #ctrl.max_dist_from_origin = 2000 # (in meters)
+
+    ctrl.half_duplex = False
+    ctrl.hd_slot0 = 0.3 # in terms of phi
+    ctrl.hd_slot1 = 0.7 # in terms of phi
+    ctrl.hd_block_during_emit = True
+    ctrl.hd_block_extrawidth = 0 # as a factor of offset (see runsim to know what is offset)
+
+    ctrl.var_winlen = False
+    ctrl.vw_minsize = 5 # as a factor of len(p.analog_sig)
+    ctrl.vw_lothreshold = 0.1 # winlen reduction threshold
+    ctrl.vw_hithreshold = 0.1 # winlen increase threshold
+    ctrl.vw_lofactor = 1.5 # winlen reduction factor
+    ctrl.vw_hifactor = 2 # winlen increase factor
+
+
+    #ctrl.outage_detect = False # thesis
+    ctrl.outage_detect = True # INTERD
+    ctrl.outage_threshold_noisefactor = 1/(p.zc_len)*2
+
+    ctrl.prop_correction = False
+    ctrl.pc_step_wait = 0
+    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(6) #THESIS
+    #ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(10) #INTERD
+    ctrl.pc_avg_thresh = float('inf') # If std of N previous TOx samples is above this value, then\
+    ctrl.pc_std_thresh = float(80) # If std of N previous TOx samples is above this value, then\
+                     # no PC is applied (but TOy is still calculated)
+    
+    ctrl.saveall = True
+
+
+    cdict = {}
+    pdict = {}
+
+    return ctrl, p, cdict, pdict
+
+def dec_dpll():
+    """Single ZC sequence with Decimation"""
+    
+    ctrl, p, cdict, pdict = dec_r12()
+
+    p.train_type = 'chain' # Type of training sequence
+    p.crosscorr_type = 'match_decimate' 
+    p.peak_detect = 'wavg' 
+
+    ctrl.static_nodes = 0
+    ctrl.TO_step_wait = 4
+
+    ctrl.epsilon_TO = 0.5
+
+    ctrl.prop_correction = True
+    ctrl.pc_step_wait = 0
+    
+    return ctrl, p, cdict, pdict
+
+def dec_grids():
+    ctrl, p, cdict, pdict = dec_dpll()
+    ctrl.nodecount = 16
+    ctrl.non_rand_seed = 128192
+    
     return ctrl, p, cdict, pdict
 
 
@@ -389,32 +517,47 @@ def zero_padded_crosscorr():
 
 def highlited_regimes():
     """Highlights the converging vs the drift regime"""
+    compare_fontsize = 15
+    compare_aspect=12
+    props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
 
     fontsize_tmp = graphs.FONTSIZE
-    graphs.change_fontsize(15)
-    def run_hair_graph():
+    def run_hair_graph(aspect='auto'):
+        hair_kwargs = {'y_label':r'$\theta_i$ $(T_0)$', 'show_clusters':False, 'savename':''}
         hair_args = (
                 (ctrl.sample_inter , ctrl.theta_inter, ctrl),
-                {'y_label':r'$\theta_i$ $(T_0)$', 'show_clusters':False, 'savename':''}
+                hair_kwargs,
         )
-        return graphs.hair(*hair_args[0], **hair_args[1])
+        ax =  graphs.hair(*hair_args[0], **hair_args[1])
+        ax.set_aspect(aspect)
+        return ax
 
     # DRIFT REGIME
+    graphs.change_fontsize(compare_fontsize)
     ctrl, p, cdict, pdict = dec_sample_theta()
     sim = SimWrap(ctrl, p, cdict, pdict)
 
     sim.conv_min_slope_samples = 15 
     sim.ctrl.keep_intermediate_values = True
     sim.simulate()
-    ax = run_hair_graph()
-    
-
-    # Draw biarrows
+    ax = run_hair_graph(aspect=compare_aspect)
+    ax.text(0.85, 0.9, 'No DC', transform=ax.transAxes, fontsize=compare_fontsize, verticalalignment='top', bbox=props) 
     xmid = 12
-    xmax = ctrl.steps-5
+    xmax = ctrl.steps-13
     xmin = 0
     ymin, ymax = ax.get_ylim()
-    ya = ymin-0.03
+    ya = ymin-0.06
+    ax.set_xlim([xmin,xmax])
+    ax.set_ylim([ya,ymax])
+    fname = 'latex_figures/init_theta'
+    graphs.save(fname)
+    graphs.show()
+
+    del ax
+    graphs.change_fontsize(15)
+    ax = run_hair_graph()
+    
+    # Draw biarrows
     ax.annotate('', xy=(xmid, ya), xycoords='data',
                 xytext=(xmin, ya), textcoords='data',
                 arrowprops=dict(arrowstyle="<->"))
@@ -424,23 +567,18 @@ def highlited_regimes():
     ax.plot([xmid, xmid], [ya-1, ymax], 'k--')
 
     # text
-    ax.text(xmid/2, ya, 'Converging', ha='center', va='bottom' )
+    ax.text(xmid/2, ya, 'Transient', ha='center', va='bottom' )
     ax.text((xmax-xmid)/2 +xmid, ya, 'Drifting', ha='center', va='bottom' )
+
     ax.set_xlim([xmin,xmax])
-    ax.set_ylim([ya-0.05,ymax])
+    ax.set_ylim([ya-0.03,ymax])
 
-
-    #graphs.show()
     fname = 'latex_figures/highlighted_regimes'
     graphs.save(fname)
     graphs.show()
 
-    # Save 
-
-
-
-    
     # THETA EXAMPLE
+    graphs.change_fontsize(compare_fontsize)
     ctrl, p, cdict, pdict = dec_sample_theta()
     ctrl.prop_correction = True
     sim = SimWrap(ctrl, p, cdict, pdict)
@@ -451,16 +589,41 @@ def highlited_regimes():
     sim.show_TO = False
     sim.make_cat = False
     sim.simulate()
-    ax = run_hair_graph()
+    ax = run_hair_graph(aspect=compare_aspect)
+    ax.text(0.85, 0.9, 'Q = 7', transform=ax.transAxes, fontsize=compare_fontsize, verticalalignment='top', bbox=props) 
 
     ax.set_xlim([xmin,xmax])
-    ax.set_ylim([ya-0.05,ymax])
+    ax.set_ylim([ya,ymax])
 
-    
     fname = 'latex_figures/example_theta'
     graphs.save(fname)
     graphs.show()
 
+    # THETA EXAMPLE with Q=14
+    graphs.change_fontsize(compare_fontsize)
+    ctrl, p, cdict, pdict = dec_sample_theta()
+    ctrl.prop_correction = True
+    ctrl.pc_b, ctrl.pc_a = lib.hipass_avg(14)
+    sim = SimWrap(ctrl, p, cdict, pdict)
+
+    sim.conv_min_slope_samples = 15 
+    sim.ctrl.keep_intermediate_values = True
+    sim.show_CFO = False
+    sim.show_TO = False
+    sim.make_cat = False
+    sim.simulate()
+    ax = run_hair_graph(aspect=compare_aspect)
+    ax.text(0.85, 0.9, 'Q = 14', transform=ax.transAxes, fontsize=compare_fontsize, verticalalignment='top', bbox=props) 
+
+    ax.set_xlim([xmin,xmax])
+    ax.set_ylim([ya,ymax])
+
+    fname = 'latex_figures/example_theta_q14'
+    graphs.save(fname)
+    graphs.show()
+
+
+    
     graphs.change_fontsize(fontsize_tmp)
 
 def sample_theta():
@@ -477,14 +640,236 @@ def sample_theta():
 
 
 def thesis_cavg_vs_nodecount():
-    alldates = db.fetch_dates([20160823191214935, 20160823194541680]) # 360k sims nodecount
+    # 180 sample per point
+    alldates = db.fetch_dates([20160824001859759, 20160824034043274]) # nodecount vs cavg
     dates = [alldates[0], alldates[-1]]
 
-    ax = graphs.scatter_range(dates, ['nodecount', 'good_link_ratio'], color='k')
-    ax.set_xlabel("$M$")
-    ax.set_ylabel("$C_{avg}$")
+    graphs.change_fontsize(15)
 
+    ax = graphs.scatter_range(dates, ['nodecount', 'good_link_ratio'], color='b')
+    ax.set_xlabel("Number of nodes $M$")
+    ax.set_ylabel("$C$")
+    ax.set_ylim((0.37,0.92))
+    graphs.save('latex_figures/thesis_cavg_vs_nodecount')
+
+def thesis_cavg_vs_distance():
+    # 180 sample per point
+    alldates = db.fetch_dates([20160824125623027, 20160824143207623]) # dist vs cavg
+    alldates += db.fetch_dates([20160824155429863, 20160824170025866]) # dist vs cavg (extra)
+    dates = [alldates[0], alldates[-1]]
+
+    graphs.change_fontsize(15)
+    ax = graphs.scatter_range(dates, ['max_dist_from_origin', 'good_link_ratio'], color='b')
+    ax.set_xlabel("Side of square area (Meters)")
+    ax.set_ylabel("$C$")
+    tick_locs = [500,750,1000,1250,1500]
+    tick_lbls = list(map(str, tick_locs))
+    ax.set_xticks(tick_locs)#, minor=False)
+    ax.set_xticklabels(tick_lbls)
+    graphs.save('latex_figures/thesis_cavg_vs_distance')
+
+def thesis_cavg_vs_zc():
+    # 150 sample per point
+    alldates = db.fetch_dates([20160825232333852, 20160826024432633]) # cavg vs zclen
+    dates = [alldates[0], alldates[-1]]
+
+    graphs.change_fontsize(15)
+    ax = graphs.scatter_range(dates, ['zc_len', 'good_link_ratio'], color='b')
+    ax.set_xlabel("Length of ZC sequence $N$")
+    ax.set_ylabel("$C$")
+    ax.set_ylim((0.25,0.85))
+    graphs.save('latex_figures/thesis_cavg_vs_zc')
+
+def thesis_cavg_vs_noise():
+    # 150 sample per point
+    alldates = db.fetch_dates([20160830143035701, 20160830162947428]) # zc vs noise_power 
+    dates = [alldates[0], alldates[-1]]
+
+    graphs.change_fontsize(15)
+    ax = graphs.scatter_range(dates, ['noise_power', 'good_link_ratio'], color='b')
+    ax.set_xlabel("Noise Power (dBm)")
+    ax.set_ylabel("$C$")
+    #ax.set_ylim((0.25,0.85))
+    graphs.save('latex_figures/thesis_cavg_vs_noise')
+
+
+def interd_cavg_vs_nodecount():
+    # 150 sample per point
+    graphs.GRAPH_OUTPUT_FORMAT = 'png'
+    graphs.change_fontsize(graphs.FONTSIZE + 2)
+    alldates = db.fetch_dates([20160825101515414, 20160825135628487]) # cavg vs nodecount
+
+    dates = [alldates[0], alldates[-1]]
+    ax = graphs.scatter_range(dates, ['nodecount', 'good_link_ratio'], color='k')
+    ax.set_xlabel("Number of nodes $M$")
+    ax.set_ylabel("$C$")
+    graphs.save('interd_cavg_vs_nodecount')
     graphs.show()
+
+def interd_cavg_vs_distance():
+    # 150 sample per point
+    graphs.GRAPH_OUTPUT_FORMAT = 'png'
+    graphs.change_fontsize(graphs.FONTSIZE + 2)
+    alldates = db.fetch_dates([20160825141108531, 20160825183253474]) # cavg vs dist
+    dates = [alldates[0], alldates[-1]]
+
+    ax = graphs.scatter_range(dates, ['max_dist_from_origin', 'good_link_ratio'], color='k')
+    ax.set_xlabel("Side of square area (Meters)")
+    ax.set_ylabel("$C$")
+    tick_locs = [500,750,1000,1250,1500]
+    tick_lbls = list(map(str, tick_locs))
+    ax.set_xticks(tick_locs)#, minor=False)
+    ax.set_xticklabels(tick_lbls)
+    graphs.save('interd_cavg_vs_distance')
+    graphs.show()
+
+def interd_dpll_vs_r12():
+    # 150 sample per point
+    graphs.GRAPH_OUTPUT_FORMAT = 'png'
+    graphs.change_fontsize(graphs.FONTSIZE + 2)
+    alldates = db.fetch_dates([20160828200017740, 20160828205450849]) # r12 vs dpll
+    dates = [alldates[0], alldates[-1]]
+
+
+    labels = []
+    labels.append('R12')
+    labels.append('DPLL')
+    ax = graphs.scatter_range(dates, ['nodecount', 'good_link_ratio'], multiplot='peak_detect', legend_labels=labels) 
+    ax.set_xlabel("Number of nodes (M)")
+    ax.set_ylabel("$C$")
+    graphs.save('interd_dpll_vs_r12')
+    graphs.show()
+
+def interd_dpll_final_compare():
+    #alldates = db.fetch_dates([20160829122809568, 20160829152128098]) # plain dpll vs contention
+    graphs.GRAPH_OUTPUT_FORMAT = 'png'
+    graphs.change_fontsize(15)
+    alldates = db.fetch_dates([20160828200017740, 20160828205450849]) # r12 vs dpll
+    dates = [alldates[0], alldates[-1]]
+
+    #extra ( add to scatter_range)
+    #sens_dates = db.fetch_dates([20160829122809568, 20160829152128098]) # plain dpll vs contention
+    #new_fetch_dict = {'date':sens_dates, 'quiet_selection':['contention']}
+    #raw_data = db.fetch_matching(new_fetch_dict, collist)
+    #datalist.append(np.array(raw_data))
+    #labels.append('Sensing')
+
+    labels = []
+    labels.append('R12')
+    labels.append('DPLL')
+    labels.append('DPLL-S')
+    ax = graphs.scatter_range(dates, ['nodecount', 'good_link_ratio'], multiplot='peak_detect', legend_labels=labels) 
+    ax.set_xlabel("Number of nodes (M)")
+    ax.set_ylabel("$C$")
+    graphs.save('interd_dpll_final_compare')
+    graphs.show()
+
+
+def basic_spatial_grid(ctrl):
+    ax = graphs.spatial_grid(ctrl, unit='m', s=12)
+    ax.set_xlabel('Meters')
+    ax.set_ylabel('Meters')
+    ax.set_aspect('equal')
+
+    graphs.save('basic_spatial_grid')
+    graphs.show()
+
+def interd_compare_r12():
+    graphs.change_fontsize(graphs.FONTSIZE + 2)
+    ctrl, p, cdict, pdict = dec_dpll()
+    sim = SimWrap(ctrl, p, cdict, pdict)
+    sim.TO_show_clusters = False
+
+    sim.ctrl.saveall = False
+    sim.simulate()
+    sim.post_sim_plots(save_TO='dpll_theta_evol')
+
+    ctrl, p, cdict, pdict = dec_r12()
+    sim = SimWrap(ctrl, p, cdict, pdict)
+    sim.TO_show_clusters = False
+    sim.ctrl.saveall = False
+    sim.simulate()
+    sim.post_sim_plots(save_TO='r12_theta_evol')
+
+def interd_quiet_grids():
+
+    graphs.GRAPH_OUTPUT_FORMAT = 'png'
+    def init_simwrap():
+        sim = SimWrap(ctrl, p, cdict, pdict);
+        sim.set_all_nodisp()
+        sim.TO_show_clusters = False
+        sim.ctrl.saveall = False
+        return sim
+
+    def graph_mods():
+        ax.set_xlabel('Meters')
+        ax.set_ylabel('Meters')
+        ax.set_aspect('equal')
+
+
+    # Random grid
+    graphs.change_fontsize(graphs.FONTSIZE + 2)
+    ctrl, p, cdict, pdict = dec_grids()
+    ctrl.quiet_selection = 'random'
+    ctrl.quiet_nodes = ctrl.nodecount - 5
+    ctrl.steps = 1
+    sim = init_simwrap()
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        sim.simulate()
+    ax = graphs.spatial_grid(ctrl, unit='m', s=12, show_broadcast=True)
+    graph_mods()
+    graphs.save('interd_grid_random')
+    graphs.show()
+
+    # cluster grid
+    ctrl, p, cdict, pdict = dec_grids()
+    ctrl.quiet_selection = 'kmeans'
+    ctrl.quiet_nodes = ctrl.nodecount - 5
+    ctrl.steps = 1
+    sim = init_simwrap()
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        sim.simulate()
+    ax = graphs.spatial_grid(ctrl, unit='m', s=12, show_broadcast=True)
+    graph_mods()
+    graphs.save('interd_grid_kmeans')
+    graphs.show()
+
+    # sensing grid
+    ctrl, p, cdict, pdict = dec_grids()
+    ctrl.quiet_selection = 'contention'
+    ctrl.steps = 40
+    sim = SimWrap(ctrl, p, cdict, pdict);
+    sim.TO_show_clusters = False
+    sim.ctrl.saveall = False
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        sim.simulate()
+    ax = graphs.spatial_grid(ctrl, unit='m', s=12, show_broadcast=True)
+    graph_mods()
+    graphs.save('interd_grid_sensing')
+    graphs.show()
+
+def interd_compare_quiet():
+    graphs.GRAPH_OUTPUT_FORMAT = 'png'
+    graphs.change_fontsize(graphs.FONTSIZE + 2)
+    alldates = db.fetch_dates([20160822172521531, 20160822215536865]) # 960sims quiet compare
+    dates = [alldates[0], alldates[-1]]
+
+    labels = []
+    labels.append('Random')
+    labels.append('Clustering')
+    labels.append('Sensing')
+    ax = graphs.scatter_range(dates, ['max_dist_from_origin', 'good_link_ratio'], multiplot='quiet_selection', legend_labels=labels); 
+    ax.set_xlabel("Side of square area (m)")
+    ax.set_ylabel("$C$")
+
+    graphs.save('interd_compare_quiet')
+    graphs.show()
+
+
+
 
 
 

@@ -115,7 +115,7 @@ def scatter(x, y, yerr, x_label='', y_label='',axes=None, savename='',show_std=T
     save(savename)
     return ax
 
-def scatter_noerr(x, y, x_label='', y_label='',axes=None, savename='',show_std=True, **kwargs):
+def scatter_noerr(x, y, x_label='', y_label='',axes=None, s=MARKERSIZE, savename='',show_std=True, **kwargs):
     """Scatter plot with no errorbars"""
 
     if axes == None:
@@ -123,7 +123,7 @@ def scatter_noerr(x, y, x_label='', y_label='',axes=None, savename='',show_std=T
     else:
         ax = axes
 
-    lh = ax.scatter(x, y, s=MARKERSIZE, **kwargs )
+    lh = ax.scatter(x, y, s=s, **kwargs )
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
 
@@ -156,7 +156,7 @@ def change_fontsize(fsize):
     matplotlib.rcParams.update({'font.size': fsize})
 
 #----- GRAPHS
-def hair(samples, param, ctrl, y_label='Parameter', axes=None, show_clusters=False, savename=''):
+def hair(samples, param, ctrl, y_label='Parameter', axes=None, show_clusters=False, savename='', **kwargs):
     """Plots an evolution graph of the parameter of"""
     # samples: sample_inter output from the simulation
     # Param:  <param>_inter output from the simulation
@@ -170,17 +170,22 @@ def hair(samples, param, ctrl, y_label='Parameter', axes=None, show_clusters=Fal
         y = np.array(plist)/ctrl.basephi
         ax.plot(x,y, 'k-')
 
+    idx_klist = ctrl.idx_klist
+    mark = list(__MARKS)
+    color = list(__COLORS)
+    if len(idx_klist) > len(mark):
+        mark += ['x']*len(idx_klist)
+        color += ['k']*len(idx_klist)
+
     ymin, ymax = (0, 1)
     xmin, xmax = ax.get_xlim()
     if show_clusters:
-        for k, cluster_indexes in enumerate(ctrl.idx_klist):
+        for k, cluster_indexes in enumerate(idx_klist):
             #kmean = ctrl.theta[cidx].mean()/ctrl.basephi
             for idx in cluster_indexes:
                 y = ctrl.theta[idx]/ctrl.basephi
-                ax.scatter(xmax+0.3, y, s=MARKERSIZE, marker=__MARKS[k], color=__COLORS[k]) 
+                ax.scatter(xmax+0.3, y, s=MARKERSIZE, marker=mark[k], color=color[k], **kwargs) 
         xmax += 1.5
-
-
 
 
     ax.set_ylim([ymin,ymax])
@@ -477,7 +482,7 @@ def delay_pdf(ctrl, axes=None, savename=''):
     ax.set_ylabel('Amplitude')
     return ax
 
-def spatial_grid(ctrl, unit='km', axes=None, savename=''):
+def spatial_grid(ctrl, unit='km', show_broadcast=False, axes=None, savename='', **kwargs):
     """Plots the map of the nodes"""
     obj = ctrl.delay_params
     fct = obj.delay_pdf_eval
@@ -489,7 +494,15 @@ def spatial_grid(ctrl, unit='km', axes=None, savename=''):
     x,y = [lib.samples2dist(k, ctrl.f_samp, unit) for k in [x,y]]
     lims = [lib.samples2dist(k, ctrl.f_samp, unit) for k in lims]
 
-    ax = scatter_noerr(x,y,axes=axes)
+    ax = scatter_noerr(x,y, axes=axes, **kwargs)
+
+    # Plot green circles to indicate the broadcasting nodes
+    radius = (lims[1]-lims[0])* 0.03
+    if show_broadcast:
+        for idx in ctrl.pivot_node:
+            circle = plt.Circle((x[idx], y[idx]), radius, color='b', fill=False)
+            ax.add_artist(circle)
+
     ax.set_xlabel('x-axis (' + unit + ')')
     ax.set_ylabel('y-axis (' + unit + ')')
     ax.set_xlim(lims)
@@ -511,17 +524,14 @@ def spatial_grid_clusters(ctrl, unit='km', axes=None, savename=''):
     idx_klist = ctrl.idx_klist
     mark = list(__MARKS)
     color = list(__COLORS)
+    if len(idx_klist) > len(mark):
+        mark += ['x']*len(idx_klist)
+        color += ['k']*len(idx_klist)
+
+    
     ax = axes
     for indexes in idx_klist:
         ax = scatter_noerr(x[indexes],y[indexes],axes=ax, marker=mark.pop(0), color=color.pop(0))
-
-    # Plot green circles to indicate the broadcasting nodes
-    radius = (lims[1]-lims[0])* 0.03
-    if ctrl.quiet_nodes != 0:
-        for idx in ctrl.pivot_node:
-            circle = plt.Circle((x[idx], y[idx]), radius, color='b', fill=False)
-            ax.add_artist(circle)
-
 
     # Fix axes
     ax.set_xlabel('x-axis (' + unit + ')')
@@ -619,7 +629,7 @@ def all_graphs(p,ctrl=None):
     cat_graphs(glist)
 
 #----- SIMBD GRAPHS
-def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best', **kwargs):
+def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best', legend_labels=False, **kwargs):
     """Scatterplot of the collist of the dates range given."""
     if len(collist) != 2:
         raise ValueError("Expected two entries in collist")
@@ -643,7 +653,6 @@ def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best', 
         datalist.append(np.array(raw_data))
 
     # Plot all that juicy data
-
     mark = list(__MARKS)
     for data, label in zip(datalist, labels):
         x, y, ystd = lib.avg_copies(data)
@@ -652,6 +661,8 @@ def scatter_range(dates, collist, multiplot=False, axes=None, legendloc='best', 
         ax.legend(loc=legendloc)
         handles, labels = ax.get_legend_handles_labels()
         handles = [h[0] for h in handles]
+        if legend_labels:
+            labels = legend_labels
         ax.legend(handles, labels, loc=legendloc, numpoints=1)
 
     # adjust the lims

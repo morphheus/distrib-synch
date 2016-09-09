@@ -100,9 +100,10 @@ def rcosfilter(N, a, T, f, dtype=CPLX_DTYPE, frac_TO=0):
     warnings.filterwarnings("ignore")
     h = np.empty(N, dtype=dtype)
     for k, t in enumerate(time):
+        stuff
         if k == zero_entry:
-            h[k] = 1
-        #elif a != 0 and abs(t) == T/(2*a):
+            h[k] = 
+        elif a != 0 and abs(t) == T/(2*a):
         #    h[k] = np.sin(pi*t/T) / (pi*t/T )
         else: 
             h[k] = np.sin(pi*t/T) * np.cos(pi*a*t/T) / (pi*t/T  *  (1-4*(a*t/T)**2 ))
@@ -1235,7 +1236,8 @@ def grab_data_for_conv(dates, conn=False):
 def eval_convergence(nt,
                      show_eval_convergence=False,
                      conv_min_slope_samples=40,
-                     conv_offset_limits=DEFAULT_OFFSET_LIMITS):
+                     conv_offset_limits=DEFAULT_OFFSET_LIMITS,
+                     calc_cluster=False):
     """Evaluates if convergence has been achieved on the namedtuple. Assumes nt
     contains most fields a sim object would contain"""
 
@@ -1319,6 +1321,8 @@ def eval_convergence(nt,
     cluster_membercount = np.zeros(kcount)
     single_kcount = 0
     for k, (cluster, cluster_indexes) in enumerate(zip(theta_klist, idx_klist)):
+        if len(cluster_indexes) == 0:
+            continue
         tmp = np.tile(cluster_indexes,(len(cluster_indexes),1))
         cluster_links[k], cluster_link_ratios[k] = good_link_eval(cluster, prop_delay_grid[tmp.T,tmp])
         cluster_membercount[k] = len(cluster)
@@ -1377,7 +1381,7 @@ def cluster_1d_known_kcount(data, kcount):
         curslice = slice(bounds_idx[k]+1,bounds_idx[k+1]+1)
         idx_klist.append(np.array(sorted_idx[curslice]))
     
-    return(idx_klist)
+    return idx_klist
 
 def find_numcluster_1d(data, normalization_factor=1, apply_norm=True):
     """picks out the number of clusters by clustering the distances between the points"""
@@ -1412,7 +1416,22 @@ def cluster_1d(data):
     """Applies the clustering algorithm on the data, then performs the clustering analyssi"""
     kcount = find_numcluster_1d(data)
     idx_klist = cluster_1d_known_kcount(data, kcount)
-    val_klist = [data[sublist] for sublist in idx_klist]
+
+    # Get the clusters values
+    val_klist = list()
+    to_prune = list()
+    for k in range(len(idx_klist)):
+        idx_arr = idx_klist[k]
+        if len(idx_arr):
+            val_klist.append(data[idx_arr])
+        else:
+            to_prune.append(k)
+
+    # If empty clusters, remove them and adjust the cluster count
+    for k in to_prune:
+        idx_klist.pop(k)
+        kcount -= 1
+
     return val_klist, idx_klist, kcount
 
 #---------------------
@@ -1456,9 +1475,9 @@ def find_pivot_node_kmeans(x,y,kcount):
     return pivot_idx, data[pivot_idx,:]
 
 
-##########################
+#%%%%%%%%%%%%%%%%%%%%%
 # CLASSDEFS
-#########################
+#%%%%%%%%%%%%%%%%%%%%%
 class Struct: 
     """Basic structure"""
     def add(self,**kwargs):

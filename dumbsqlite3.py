@@ -237,7 +237,17 @@ def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False, new_data=True):
         c.execute("ALTER TABLE {tn} ADD COLUMN '{cn}' {ct}"\
                   .format(tn=tn, cn=x[0], ct=x[1]))
     
-    conn.commit()
+
+    
+    # Attempt to changes data to db. Retry thrice if failure
+    for k in range(4):
+        try:
+            conn.commit()
+            break
+        except Exception: 
+            pass
+        if k == 3:
+            raise Exception('Failed to commit changes to db')
 
 
     #Actually add
@@ -274,7 +284,17 @@ def add(data, tn=DEF_TABLE, dbase_file=DEF_DB, conn=False, new_data=True):
         except sqlite3.IntegrityError:
             data[__PRIMARY] = build_timestamp_id() # Propagates in parent namespace
 
-    conn.commit()
+
+    # Attempt to commit data to db. Retry twice if failure
+    for k in range(4):
+        try:
+            conn.commit()
+            break
+        except Exception: 
+            pass
+        if k == 3:
+            raise Exception('Failed to commit changes to db')
+
 
     if close_conn:
         conn.close()

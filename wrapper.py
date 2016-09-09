@@ -13,6 +13,7 @@ import inspect
 import time
 import math
 import copy
+import traceback
 
 from numpy import pi
 
@@ -55,7 +56,7 @@ def dec_wrap2():
     p.scfdma_sinc_len_factor = p.scfdma_L
 
     ctrl = SimControls()
-    ctrl.steps = 70
+    ctrl.steps = 40
     ctrl.basephi = 40000 #Thesis
     #ctrl.basephi = 122880 #Interd
     ctrl.nodecount = 35
@@ -79,7 +80,7 @@ def dec_wrap2():
     #ctrl.deltaf_bound = 0
     ctrl.rand_init = False
     ctrl.epsilon_TO = 0.5
-    ctrl.non_rand_seed = 17481 # Only used if rand_init is False
+    ctrl.non_rand_seed = 1238819 # Only used if rand_init is False
     #ctrl.noise_power = float('-inf')
     ctrl.noise_power = -101 + 9 # in dbm
 
@@ -126,20 +127,19 @@ def dec_wrap2():
     ntot = math.floor((ncount_hi - ncount_lo - 1)/abs(step))
 
 
-    #cdict = {
-    #    'quiet_selection':['random', 'kmeans', 'contention']*4,
-    #    'max_dist_from_origin':[500]*3 + [750]*3 + [1000]*3 + [1500]*3
-    #    }
-    #pdict = {}
-
     cdict = {
-        'nodecount':[x for x in range(ncount_lo, ncount_hi,step)]
+        'noise_power':[x for x in range(-120,-91,2)]
         }
     pdict = {}
+
+    #cdict = {
+    #}
+    #pdict = {}
     
     #cdict = {
     #    'prop_correction':[False, True , True , True , True ],
     #}
+
     #pdict = {
     #    'scfdma_precode': [False, False, False, True , True ],
     #    'bias_removal':   [False, False, True , False, True]
@@ -147,15 +147,49 @@ def dec_wrap2():
 
     return ctrl, p, cdict, pdict
 
+def dec_r12():
+
+    ctrl, p, cdict, pdict = dec_wrap2()
+    p.train_type = 'single' # Type of training sequence
+    p.peak_detect = 'argmax' 
+
+    
+    ctrl.quiet_selection = 'contention' # Note this renders ctrl.quiet_nodes uiseless, and requires the use of outage detectection
+    ctrl.qc_threshold = 1 # As a factor of the outage threshold
+    ctrl.qc_steps = 1
+
+    ctrl.TO_step_wait = 1
+
+    ctrl.epsilon_TO = 1
+
+    ctrl.prop_correction = False
+    
+    ctrl.outage_threshold_noisefactor = 1/(p.zc_len)
+
+    return ctrl, p, cdict, pdict
+
+
 #------------------------
 def main():
 
-    #thygraphs.thesis_cavg_vs_nodecount(); exit()
+    #thygraphs.highlited_regimes();
+    #thygraphs.thesis_cavg_vs_distance();
+    #thygraphs.thesis_cavg_vs_zc();
+    #thygraphs.thesis_cavg_vs_nodecount(); 
+    thygraphs.thesis_cavg_vs_noise(); 
+    #thygraphs.interd_quiet_grids(); 
+    #thygraphs.interd_compare_quiet(); 
+    #thygraphs.interd_cavg_vs_distance();
+    #thygraphs.interd_cavg_vs_nodecount(); 
+    #thygraphs.interd_dpll_vs_r12(); 
+    exit()
 
-    
     ctrl, p, cdict, pdict = dec_wrap2()
+    #ctrl, p, cdict, pdict = dec_r12()
     init_cdict = {**cdict, **pdict}
     sim = SimWrap(ctrl, p, cdict, pdict)
+
+    
 
 
     #sim.conv_offset_limits = [x*2 for x in sim.conv_offset_limits]
@@ -166,7 +200,7 @@ def main():
 
     sim.set_all_nodisp()
     sim.make_plots = False
-    sim.repeat = 60
+    sim.repeat = 30
     sim.ctrl.rand_init = True
 
     simstr = 'all'
@@ -174,29 +208,49 @@ def main():
     sim.simmany(simstr);# dates = [dates[0], dates[-1]]
     #alldates = db.fetch_last_n_dates(tsims);
 
+    #THESIS
     #alldates = db.fetch_dates([20160723012902720, 20160724030205810]) # 4.5k sims july 24 
     #alldates += db.fetch_dates([20160803172306291, 20160804023828227 ]) # 3k sims aug3
     #alldates = db.fetch_dates([20160823191214935, 20160823194541680]) # 360k sims nodecount
-
+    #alldates = db.fetch_dates([20160824001859759, 20160824034043274]) # nodecount vs cavg
+    #alldates = db.fetch_dates([20160824125623027, 20160824143207623]) # dist vs cavg
+    #alldates += db.fetch_dates([20160824155429863, 20160824170025866]) # dist vs cavg (extra)
+    #alldates = db.fetch_dates([20160825010048334, 20160825040232662]) # zc vs cavg 
+    #alldates = db.fetch_dates([20160830143035701, 20160830162947428]) # zc vs noise_power 
+    
 
 
     
+
+    #INTERD
     #alldates = db.fetch_dates([20160716122731390, 20160715204752242]) # 900sim quiet 1km
     #alldates = db.fetch_dates([20160718215702723, 20160718114958378]) # 540sim quiet 1.414 km
     #alldates = db.fetch_dates([20160807005022420, 20160807101308389]) # 1200sim quiet 2 km
-
     #alldates = db.fetch_dates([20160812174745548, 20160813032432642]) # 1200sim kmeans
     #alldates = db.fetch_dates([20160822172521531, 20160822215536865]) # 960sims quiet compare
-    dates = [alldates[0], alldates[-1]]
+
+    #alldates = db.fetch_dates([20160825101515414, 20160825135628487]) # cavg vs nodecount
+    #alldates = db.fetch_dates([20160825141108531, 20160825183253474]) # cavg vs dist
+    #alldates = db.fetch_dates([20160825232333852, 20160826024432633]) # cavg vs zclen
+
+    #alldates = db.fetch_dates([20160828200017740, 20160828205450849]) # r12 vs dpll
+    #alldates = db.fetch_dates([20160829122809568, 20160829152128098]) # plain dpll vs contention
+
+
+    #dates = [alldates[0], alldates[-1]]
 
     #graphs.scatter_range(dates, ['max_dist_from_origin', 'good_link_ratio'], multiplot='quiet_selection'); graphs.show()
+    #graphs.scatter_range(dates, ['nodecount', 'good_link_ratio']); graphs.show()
 
+    
+    #graphs.scatter_range(dates, ['nodecount', 'good_link_ratio'], multiplot='peak_detect'); graphs.show()
+ 
 
     #lib.options_convergence_analysis(alldates, init_cdict, write=True)
-    #print(db.fetchone(alldates[0], 'pc_b'))
+    #print(db.fetchone(alldates[0], ''))
     #lib.update_db_conv_metrics(alldates, conv_offset_limits=sim.conv_offset_limits); exit()
-    #graphs.scatter_range(dates, ['quiet_nodes', 'good_link_ratio']); graphs.show(); exit()
-    #graphs.scatter_range(dates, ['quiet_nodes', 'cluster_wavg_goodlink']); graphs.show()
+    #graphs.scatter_range(dates, ['zc_len', 'good_link_ratio']); graphs.show(); exit()
+    #graphs.scatter_range(dates, ['quiet_nodes', 'good_link_ratio']); graphs.show()
     #graphs.scatter_range(dates, ['quiet_nodes', 'cluster_count_single']); graphs.show()
     #graphs.scatter_range(dates, ['quiet_nodes', 'cluster_count']); graphs.show()
 
@@ -325,6 +379,7 @@ class SimWrap(lib.Struct):
         self.ctrl.add(**lib.eval_convergence(self, show_eval_convergence=self.show_conv, conv_min_slope_samples=self.conv_min_slope_samples, conv_offset_limits=self.conv_offset_limits))
         self.ctrl.date = lib.build_timestamp_id();
 
+        # Save things to db
         savedict = self.ctrl.__dict__.copy()
         savedict['delay_grid'] = self.ctrl.delay_params.delay_grid
         try:
@@ -332,9 +387,9 @@ class SimWrap(lib.Struct):
                 del savedict[var]
         except KeyError:
             pass
-        
         db.add(savedict)
 
+        # Display stuff
         if self.show_elapsed:
             print('Elapsed: ' + "%2.2f"%(tf()-t0) + ' seconds.')
 
@@ -378,7 +433,9 @@ class SimWrap(lib.Struct):
                 try:
                     curdate = self.simulate()
                 except Exception:
-                    print('\n Unhandled exception: ' + str(Exception) + '\n')
+                    print('\n')
+                    traceback.print_exc()
+                    print('\n')
                     continue
                 dates.append(curdate)
         oprint(' '*len(msg))

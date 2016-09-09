@@ -190,7 +190,10 @@ def runsim(p, ctrl):
         start_delay = np.zeros(nodecount, dtype=lib.INT_DTYPE)
 
     # Make sure static nodes are always start 
-    start_delay[nodetype=='static'] = 0
+    start_delay[nodetype=='stati'] %= basephi
+    #start_delay[0:2] %= basephi
+    #start_delay[2:] += basephi
+
 
     # Initialize the channel array with noise
     initfct = lambda shape: lib.cplx_gaussian(shape, noise_var, dtype=lib.CPLX_DTYPE)
@@ -247,6 +250,11 @@ def runsim(p, ctrl):
 
         ordered_insert(prev_adjustsample[clk]+first_event,clk) 
 
+    # Add the clock intial values
+    thetafull = theta.copy()
+    for clk, sample in enumerate(theta):
+        add_inter(prev_adjustsample[clk], clk)
+
     # Make first two nodes broadcast faster. If those nodes are quiet nodes, swap their nodetype
     # with the latest variable nodes
     varia_idxs = list(np.where(nodetype=='varia')[0])
@@ -263,10 +271,7 @@ def runsim(p, ctrl):
                 nodetype[node] = 'varia'
                 nodetype[switch_node] = 'quiet'
 
-    # Add the clock intial values
-    thetafull = theta.copy()
-    for clk, sample in enumerate(theta):
-        add_inter(prev_adjustsample[clk], clk)
+
     
     cursample = queue_sample.pop(0)
     node = queue_clk.pop(0)
@@ -554,6 +559,7 @@ class SimControls(lib.Struct):
         # Node behaviours
         self.static_nodes = 0 # Static nodes do not adjust (but they emit)
         self.quiet_nodes = 0 # quiet nodes do not emit (but they adjust)
+        self.quiet_selection = 'random'
         # Echo controls, initialized with no echoes
         self.delay_params = lib.DelayParams(lib.delay_pdf_exp)
         self.pdf_kwargs = dict()
