@@ -24,15 +24,15 @@ NOSAVELIST = [
 
 
 #----------------------------------
-
 def val_within_bounds(val, bounds, name):
+    """Checks if some variable is within given bounds"""
     if val < bounds[0] or val > bounds[1]:
         bstr = list(map(str,bounds))
         except_msg = bstr[0] + ' <= ' + name + ' <= ' + bstr[1] + ' is unsatisfied'
         raise ValueError(except_msg)
 
 def ordered_insert(sample, clknum):
-    """Insert from the left in descending order, in a list"""
+    """Insert from the left in descending order, in a list. Used for scheduling purposes"""
     global queue_sample, queue_clk
 
     idx = bisect.bisect(queue_sample, sample)
@@ -42,8 +42,8 @@ def ordered_insert(sample, clknum):
 def runsim(p, ctrl):
     """Executes a simulation with the signal parameters p and controls parameters ctrl"""
 
-    # Put important ctrl values in local namespace ease of writing. These values shound not
-    # change under any circumstances
+    # Put important ctrl values in local namespace ease of writing. These values do not change 
+    # during simulation
     nodecount = ctrl.nodecount
     basephi = ctrl.basephi
     chansize = ctrl.chansize
@@ -76,8 +76,6 @@ def runsim(p, ctrl):
     #----------------------
     # VARIABLE DECLARATIONS
     #----------------------
-
-
     global queue_sample, queue_clk
     # Simulation initialization
     queue_sample = []
@@ -174,7 +172,7 @@ def runsim(p, ctrl):
 
     
     #---------
-    # Rand init
+    # Initalization of random parameters, if rand_init. Else, use the given seed
     if not ctrl.rand_init:
         np.random.seed(ctrl.non_rand_seed)
     
@@ -189,11 +187,8 @@ def runsim(p, ctrl):
     else:
         start_delay = np.zeros(nodecount, dtype=lib.INT_DTYPE)
 
-    # Make sure static nodes are always start 
+    # Make sure static nodes are always start early first
     start_delay[nodetype=='stati'] %= basephi
-    #start_delay[0:2] %= basephi
-    #start_delay[2:] += basephi
-
 
     # Initialize the channel array with noise
     initfct = lambda shape: lib.cplx_gaussian(shape, noise_var, dtype=lib.CPLX_DTYPE)
@@ -207,7 +202,8 @@ def runsim(p, ctrl):
 
 
     # ---------------
-    # Path init
+    # Initialization of multipath parameters.
+    # To implement block fading, just call build_analog_matrix() again in the simulation
     analog_matrix = [ [[] for x in range(nodecount)] for x in range(nodecount)]
 
     def build_analog_matrix():
@@ -239,6 +235,7 @@ def runsim(p, ctrl):
             phi_inter[node].append(phi[node])
             deltaf_inter[node].append(deltaf[node])
 
+    # Initialize the schedule queues
     # First event happens based on initial phase shift
     for clk, sample in enumerate(theta):
         prev_adjustsample[clk] = sample - phi[clk] + phi_minmax[1] + start_delay[clk]
@@ -250,7 +247,7 @@ def runsim(p, ctrl):
 
         ordered_insert(prev_adjustsample[clk]+first_event,clk) 
 
-    # Add the clock intial values
+    # Save the clock initial values
     thetafull = theta.copy()
     for clk, sample in enumerate(theta):
         add_inter(prev_adjustsample[clk], clk)
@@ -273,12 +270,12 @@ def runsim(p, ctrl):
 
 
     
+    # Get the first event time/node
     cursample = queue_sample.pop(0)
     node = queue_clk.pop(0)
     while cursample < max_sample:
-
         # ----------------
-        # Emit phase
+        # Emit event
         if next_event[node] == 'emit':
             minsample = cursample-offset
             maxsample = cursample+offset+1
@@ -316,7 +313,7 @@ def runsim(p, ctrl):
 
 
         # ----------------
-        # Adjust phase
+        # Adjust event
         elif next_event[node] == 'adju':
             # Variable window length
             if ctrl.var_winlen:
@@ -331,7 +328,6 @@ def runsim(p, ctrl):
                 elif prev_TO[node] > hithresh:
                     winlen = min(int(round(winlen*ctrl.vw_hifactor)), maxlen)
                 nodes_winlen[node] = winlen # Store computed winlen for later use
-                
 
                 expected_loc = cursample - wait_til_adjust[node]
                 expected_loc += hd_correction[node] if ctrl.half_duplex else 0
@@ -341,9 +337,8 @@ def runsim(p, ctrl):
                 if winmax > cursample or winmin < prev_adjustsample[node]:
                     winmax = cursample
                     winmin = prev_adjustsample[node]
-
                 winlen = winmax - winmin # Use real winlen for calculations if there was oob issue
-
+            # STatic window length
             else:
                 winmax = cursample
                 winmin = prev_adjustsample[node]
@@ -351,11 +346,12 @@ def runsim(p, ctrl):
 
             prev_adjustsample[node] = cursample
 
+            # Half-duplex resttriction
             # Block channel values when node emitted
             if ctrl.half_duplex and ctrl.hd_block_during_emit and prev_emit_range[node] is not None:
                 channels[prev_emit_range[node], node] = 0
 
-
+            # Determines what is TO
             # Obtain barycenters
             if winlen > sync_pulse_len + 1:
                 barycenter_range = range(winmin, winmax)
@@ -365,14 +361,15 @@ def runsim(p, ctrl):
                 baryneg = barypos
             bary_avg = int(round((barypos+baryneg)/2)) 
 
-            # Offset with respect to emit time
+            # Offset with respect to current time
             TO = winmax - winlen + bary_avg - cursample + wait_til_adjust[node] 
             
-            # Fix slot offset for 
+            # Fix slot offset for half-duplex
             if ctrl.half_duplex:
                 TO += hd_correction[node]
 
-            # Apply epsilon
+            # Apply epsilon and turn into an integer. 
+            # TO is now a time offset in oversamples
             TO = round(TO*epsilon_TO)
 
             # Outage detection
@@ -398,31 +395,30 @@ def runsim(p, ctrl):
             
             # Prop delay correction
             prev_TOx[node].appendleft(TO)
-
+            # If drift regime
             if do_pc_step_wait[node] > ctrl.pc_step_wait and ctrl.prop_correction and wait_emit[node] >= ctrl.TO_step_wait:
-
-                #print(np.std(prev_TOx[node]))
+                # if drift regime for long enough
                 if np.std(prev_TOx[node]) < ctrl.pc_std_thresh:
                     TOy = (prev_TOx[node]*pc_b).sum() - (prev_TOy*pc_a[1:]).sum()
                     prev_TOy[node].appendleft(TOy)
                     TO = TOy
-                
+            # If converging regime
             else:
                 do_pc_step_wait[node] += 1
 
 
-            # If TO leads to an adjustement bigger than cursample, something may have gone wrong.
+            # If TO leads to an adjustement bigge than the adjustement window, something may have gone wrong.
             if not np.isfinite(TO):
                 raise Exception('TO = ' + str(TO))
             if TO > wait_til_adjust[node]:
                 warnings.warn('final TO correction beyond adjust window')
                 TO %= phi[node]
 
+            # Bookeeping step
             theta[node] += TO
             thetafull[node] += TO
             theta[node] = theta[node] % phi[node]
 
-            #prev_TO[node] = TO
             # CFO correction
             CFO = cfo_mapper_fct(barypos-baryneg, p)
             
@@ -451,11 +447,12 @@ def runsim(p, ctrl):
             if do_CFO_correction[node]:
                 deltaf[node] += CFO_correction
 
-            # Bookeeping
+            # More bookeeping
             add_inter(cursample, node)
 
 
-            # Set next event
+            # Set next event. The TO correcton is applied here
+            # Next event is set T_0/2 + TO in the future
             if wait_emit[node] < ctrl.TO_step_wait:
                 next_event_sample = (math.ceil(phi[node])\
                                           +cursample+TO).astype(lib.INT_DTYPE)
@@ -470,10 +467,10 @@ def runsim(p, ctrl):
                                           +cursample+TO).astype(lib.INT_DTYPE)
                 next_event[node] = 'emit'
 
-            # Simulated processing time
+            # We assume this whole adjust event takes some time to complete
+            # If the correction is "too short", we move one period in the future
             if next_event_sample <= cursample + phi[node]*ctrl.min_back_adjust:
                 next_event_sample += phi[node]
-            
             ordered_insert(next_event_sample, node)
         else:
             raise Exception("Unknown next event '" + str(next_event[node]) + "'")
@@ -483,6 +480,7 @@ def runsim(p, ctrl):
         # Fetch next event/node
         prev_sample = cursample
         cursample = queue_sample.pop(0)
+        # If the next event is in the past, something went terribly wrong in this adjust event.
         if prev_sample > cursample:
             raise Exception("Cursample was lowered; time travel isn't allowed")
         node = queue_clk.pop(0)
@@ -494,15 +492,13 @@ def runsim(p, ctrl):
     #---------------
     # Post-sim wrap up
     #---------------
-
     if ctrl.display:
         print('theta STD: ' + str(np.std(lib.minimize_distance(theta, basephi))))
-        #print('deltaf STD: ' + str(np.std(deltaf)) + '    spread: ' + str(max(deltaf)-min(deltaf)))
-
 
     # determine what were the final pivot nodes if quiet contention is use
     if apply_quiet_contention:
         pivot_node = np.where(nodetype!='quiet')[0]
+
     # Add all calculated values with the controls parameter structure
     ctrl.theta = theta
     ctrl.deltaf = deltaf
@@ -512,7 +508,7 @@ def runsim(p, ctrl):
     ctrl.phi_ssstd = np.std(phi)
     ctrl.pivot_node = pivot_node
     ctrl.nodetype = nodetype
-    ctrl.simulated = True
+    ctrl.simulated = True # Yes, a simulation was done
 
     if ctrl.keep_intermediate_values:
         ctrl.sample_inter = sample_inter
@@ -521,9 +517,9 @@ def runsim(p, ctrl):
         ctrl.deltaf_inter = deltaf_inter
         ctrl.phi_inter = phi_inter
 
+    # Add p to ctrl. for DB management.
     if ctrl.saveall:
         ctrl.add(**p.__dict__)
-
 
 
 class SimControls(lib.Struct):
@@ -532,7 +528,7 @@ class SimControls(lib.Struct):
     simulated = False
 
     def __init__(self):
-        """Default values"""
+        """Default values. See wrapper.dec_wrap2 for a description of the parameters"""
         self.use_ringarr = False
         self.steps = 30
         self.nodecount = 7
@@ -605,7 +601,8 @@ class SimControls(lib.Struct):
             self.update()
 
     def update(self):
-        """Must be run before runsim can be executed"""
+        """Must be run before runsim can be executed. Executes some processing on the control 
+        parameters"""
         self.chansize = int(self.basephi*self.steps)
         self.phi_minmax = [round(x*self.basephi) for x in self.phi_bounds]
         self.theta_minmax = [round(x*self.basephi) for x in self.theta_bounds]
@@ -615,7 +612,6 @@ class SimControls(lib.Struct):
             np.random.seed(self.non_rand_seed)
 
         self.delay_params.max_dist_from_origin = self.max_dist_from_origin
-        
         self.echo_delay, self.echo_amp = self.delay_params.build_delay_matrix(self.nodecount, self.basephi, self.f_samp, self.f_carr, **self.pdf_kwargs)
 
         if not self.rand_init:
@@ -626,5 +622,4 @@ class SimControls(lib.Struct):
         val_within_bounds(self.hd_slot0, [0,1] , 'hd_slot0')
         val_within_bounds(self.hd_slot1, [0,1] , 'hd_slot1')
 
-        
         self.init_update = True

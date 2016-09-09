@@ -1027,11 +1027,11 @@ def hipass_semicirc_zeros(N, max_angle, zeros_magnitude):
 
 #--------------------
 def build_timestamp_id():
-    """Builds a timestamp, and appens a random 3 digit number after it"""
+    """Builds a timestamp"""
     return db.build_timestamp_id()
 
 def base62_encode(integer):
-    """Contracts some integer in base 62"""
+    """Decimal to base62"""
     alpha = BASE62_ALPHABET
     base = len(alpha)
 
@@ -1046,7 +1046,7 @@ def base62_encode(integer):
     return encoded[::-1]
 
 def base62_decode(encoded):
-    """Contracts some integer in base 62"""
+    """ base 62 to integer"""
     alpha = BASE62_ALPHABET
     base = len(alpha)
 
@@ -1349,7 +1349,7 @@ def eval_convergence(nt,
     return output
 
 def update_db_conv_metrics(dates, conv_offset_limits=DEFAULT_OFFSET_LIMITS):
-    """Updates the convergence metrics for the specified dates."""
+    """Updates the convergence metrics for the specified dates. FAR FROM OPTIMIZED"""
     # TODO: build a dedicated update function to do bulk updates
     conn = db.connect()
     for date in dates:
@@ -1488,7 +1488,7 @@ class Struct:
             yield name, val
 
 class DelayParams(Struct):
-    """Parameters class for the delays between nodes. Contains all parameters and build functions."""
+    """Parameters class for the multipath delays between nodes. Contains all parameters and build functions."""
     def __init__(self, delay_pdf,
                  taps=1,
                  max_dist_from_origin=0):
