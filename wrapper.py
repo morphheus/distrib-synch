@@ -70,7 +70,6 @@ def dec_wrap2():
     ctrl.quiet_nodes = 0 # Nodes that synchronize but do not broadcast
     ctrl.quiet_selection = 'random' # How are quiet nodes assigned
     #ctrl.quiet_selection = 'kmeans' 
-    #ctrl.quiet_selection = 'contention' # Note this renders ctrl.quiet_nodes uiseless, and requires the use of outage detectection
 
     # Parameters specific to the contention method (sensing)
     ctrl.qc_threshold = 5 # As a factor of the outage threshold

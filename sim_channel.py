@@ -381,18 +381,6 @@ def runsim(p, ctrl):
                 else:
                     out_of_coverage[node] = False
 
-            # Quiet contention
-            if apply_quiet_contention:
-                if crosscorr_avgmax > ctrl.qc_threshold*outage_threshold:
-                    if qc_counter[node] >= ctrl.qc_steps:
-                        nodetype[node] = 'quiet'
-                    else:
-                        qc_counter[node] += 1
-                else:
-                    qc_counter[node] += 0
-                    nodetype[node] = 'varia'
-                
-            
             # Prop delay correction
             prev_TOx[node].appendleft(TO)
             # If drift regime
